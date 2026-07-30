@@ -1,0 +1,13 @@
+# Local working / planning notes -- kept out of the shared GitHub repo.
+# (If you later want the file-map in the repo, remove the docs/ line.)
+CLAUDE.md
+docs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# OS / editor cruft
+.DS_Store

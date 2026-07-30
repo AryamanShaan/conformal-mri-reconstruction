@@ -1,0 +1,305 @@
+import pathlib
+from argparse import ArgumentParser
+from collections import defaultdict
+
+import numpy as np
+import pytorch_lightning as pl
+import torch
+# from utilities import evaluation
+from . import evaluation
+# from utilities.functions import save_reconstructions
+from common.functions import save_reconstructions
+
+
+class MriModule(pl.LightningModule):
+
+    def __init__(self, num_log_images: int = 16, model_name: str = "default_model"):
+        super().__init__()
+
+        self.num_log_images = num_log_images
+        self.model_name = model_name
+        self.val_log_indices = None
+
+        # NOTE(PL2.x port): Lightning 2.0 removed the automatic collection of
+        # step outputs into validation_epoch_end/test_epoch_end. Outputs are
+        # now accumulated manually in these lists (filled by the
+        # on_*_batch_end hooks below, cleared in the on_*_epoch_end hooks).
+        self.validation_step_outputs = []
+        self.test_step_outputs = []
+
+    # ============================================================
+    # VALIDATION STEP END
+    # ============================================================
+    def validation_step_end(self, val_logs):
+
+        required = [
+            "batch_idx", "fname", "slice_num", "max_value",
+            "output", "target", "val_loss"
+        ]
+        for k in required:
+            if k not in val_logs:
+                raise RuntimeError(f"Missing key {k} from validation_step.")
+
+        if val_logs["output"].ndim == 2:
+            val_logs["output"] = val_logs["output"].unsqueeze(0)
+        if val_logs["target"].ndim == 2:
+            val_logs["target"] = val_logs["target"].unsqueeze(0)
+        if val_logs.get("mask_1d") is not None and val_logs["mask_1d"].ndim == 1:
+            val_logs["mask_1d"] = val_logs["mask_1d"].unsqueeze(0)
+
+        if self.val_log_indices is None:
+            # NOTE(PL2.x port): with a single val loader, trainer.val_dataloaders
+            # is the DataLoader itself in Lightning 2.x (it was a list in 1.x).
+            # val_loader = self.trainer.val_dataloaders[0]
+            val_loader = self.trainer.val_dataloaders
+            if isinstance(val_loader, (list, tuple)):
+                val_loader = val_loader[0]
+            self.val_log_indices = list(
+                np.random.permutation(
+                    len(val_loader)
+                )[: self.num_log_images]
+            )
+
+        batch_indices = (
+            [val_logs["batch_idx"]]
+            if isinstance(val_logs["batch_idx"], int)
+            else val_logs["batch_idx"]
+        )
+
+        for i, batch_idx in enumerate(batch_indices):
+            if batch_idx in self.val_log_indices:
+                key = f"val_images_idx_{batch_idx}"
+
+                target = val_logs["target"][i].unsqueeze(0)
+                output = val_logs["output"][i].unsqueeze(0)
+                error = torch.abs(target - output)
+
+                output = output / output.max()
+                target = target / target.max()
+                error = error / error.max()
+
+                self.log_image(f"{key}/target", target)
+                self.log_image(f"{key}/reconstruction", output)
+                self.log_image(f"{key}/error", error)
+
+                if val_logs.get("mask_1d") is not None:
+                    mask_1d = val_logs["mask_1d"][i].float().unsqueeze(0).unsqueeze(0)
+                    self.log_image(f"{key}/mask_1d", mask_1d)
+
+        mse_vals = defaultdict(dict)
+        target_norms = defaultdict(dict)
+        ssim_vals = defaultdict(dict)
+        max_vals = {}
+
+        for i, fname in enumerate(val_logs["fname"]):
+            slice_num = int(val_logs["slice_num"][i].cpu())
+            maxval = val_logs["max_value"][i].cpu().numpy()
+            output = val_logs["output"][i].cpu().numpy()
+            target = val_logs["target"][i].cpu().numpy()
+
+            mse_vals[fname][slice_num] = torch.tensor(
+                evaluation.mse(target, output)
+            ).view(1)
+
+            target_norms[fname][slice_num] = torch.tensor(
+                evaluation.mse(target, np.zeros_like(target))
+            ).view(1)
+
+            ssim_vals[fname][slice_num] = torch.tensor(
+                evaluation.ssim(target[None, ...], output[None, ...], maxval=maxval)
+            ).view(1)
+
+            max_vals[fname] = maxval
+
+        return {
+            "val_loss": val_logs["val_loss"],
+            "mse_vals": dict(mse_vals),
+            "target_norms": dict(target_norms),
+            "ssim_vals": dict(ssim_vals),
+            "max_vals": max_vals,
+        }
+
+    # ============================================================
+    # NOTE(PL2.x port): the validation_step_end hook above is no longer called
+    # automatically (removed in Lightning 2.0). This batch-end hook applies it
+    # manually to each validation_step output and stores the processed result
+    # for on_validation_epoch_end.
+    # ============================================================
+    def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0):
+        self.validation_step_outputs.append(self.validation_step_end(outputs))
+
+    # ============================================================
+    # NOTE(PL2.x port): same for test -- raw test_step outputs are accumulated
+    # for on_test_epoch_end (test has no step_end processing).
+    # ============================================================
+    def on_test_batch_end(self, outputs, batch, batch_idx, dataloader_idx=0):
+        self.test_step_outputs.append(outputs)
+
+    # ============================================================
+    def log_image(self, name, image):
+        # self.logger.experiment.add_image(name, image, global_step=self.global_step)
+        # With multiple loggers (TensorBoard + CSV) self.logger.experiment is a
+        # list; only the TensorBoard experiment supports add_image.
+        experiments = self.logger.experiment
+        if not isinstance(experiments, (list, tuple)):
+            experiments = [experiments]
+        for exp in experiments:
+            if hasattr(exp, "add_image"):
+                exp.add_image(name, image, global_step=self.global_step)
+
+    # ============================================================
+    # VALIDATION EPOCH END
+    # NOTE(PL2.x port): renamed from validation_epoch_end(self, val_logs) --
+    # that hook (with auto-collected outputs) was removed in Lightning 2.0.
+    # Outputs now come from self.validation_step_outputs, which is cleared at
+    # the end so the next epoch starts fresh.
+    # ============================================================
+    # def validation_epoch_end(self, val_logs):
+    def on_validation_epoch_end(self):
+        val_logs = self.validation_step_outputs
+
+        losses = []
+        mse_vals = defaultdict(dict)
+        target_norms = defaultdict(dict)
+        ssim_vals = defaultdict(dict)
+        max_vals = {}
+
+        for log in val_logs:
+            losses.append(log["val_loss"].view(-1))
+
+            for k in log["mse_vals"]:
+                mse_vals[k].update(log["mse_vals"][k])
+            for k in log["target_norms"]:
+                target_norms[k].update(log["target_norms"][k])
+            for k in log["ssim_vals"]:
+                ssim_vals[k].update(log["ssim_vals"][k])
+
+            for k in log["max_vals"]:
+                max_vals[k] = log["max_vals"][k]
+
+        metrics = {
+            "nmse": 0,
+            "ssim": 0,
+            "psnr": 0,
+        }
+
+        local_examples = 0
+
+        for fname in mse_vals:
+            local_examples += 1
+
+            mse_val = torch.mean(torch.cat([v.view(-1) for v in mse_vals[fname].values()]))
+            target_norm = torch.mean(torch.cat([v.view(-1) for v in target_norms[fname].values()]))
+
+            metrics["nmse"] += mse_val / target_norm
+
+            metrics["psnr"] += (
+                20 * torch.log10(torch.tensor(max_vals[fname], dtype=mse_val.dtype, device=mse_val.device))
+                - 10 * torch.log10(mse_val)
+            )
+
+            metrics["ssim"] += torch.mean(torch.cat([v.view(-1) for v in ssim_vals[fname].values()]))
+
+        tot_examples = torch.tensor(local_examples, device=self.device)
+        val_loss = torch.sum(torch.cat(losses)).to(self.device)
+        tot_slice_examples = torch.tensor(len(losses), dtype=torch.float, device=self.device)
+
+        self.log("val/loss", val_loss / tot_slice_examples, prog_bar=True, sync_dist=True)
+
+        for m, v in metrics.items():
+            self.log(f"val/{m}", v / tot_examples, sync_dist=True)
+
+        # NOTE(PL2.x port): clear the manually accumulated outputs.
+        self.validation_step_outputs.clear()
+
+    # ============================================================
+    # TEST
+    # NOTE(PL2.x port): renamed from test_epoch_end(self, test_logs) -- hook
+    # removed in Lightning 2.0; outputs come from self.test_step_outputs.
+    # ============================================================
+    # def test_epoch_end(self, test_logs):
+    def on_test_epoch_end(self):
+        test_logs = self.test_step_outputs
+
+        outputs = defaultdict(dict)
+        masks_1d = defaultdict(dict)
+        support_widths = defaultdict(dict)
+        accelerations = defaultdict(dict)
+        acq_starts = defaultdict(dict)
+        acq_ends = defaultdict(dict)
+
+        for log in test_logs:
+            for i, (fname, slice_num) in enumerate(zip(log["fname"], log["slice"])):
+                sl = int(slice_num.cpu())
+                outputs[fname][sl] = log["output"][i]
+
+                if log.get("mask_1d") is not None:
+                    masks_1d[fname][sl] = log["mask_1d"][i]
+
+                if log.get("support_width") is not None:
+                    support_widths[fname][sl] = log["support_width"][i]
+
+                if log.get("effective_acceleration") is not None:
+                    accelerations[fname][sl] = log["effective_acceleration"][i]
+
+                if log.get("acq_start") is not None:
+                    acq_starts[fname][sl] = int(log["acq_start"][i])
+
+                if log.get("acq_end") is not None:
+                    acq_ends[fname][sl] = int(log["acq_end"][i])
+
+        packed = {}
+
+        for fname in outputs:
+            item = {
+                "reconstruction": np.stack(
+                    [out for _, out in sorted(outputs[fname].items())]
+                )
+            }
+
+            if fname in masks_1d and len(masks_1d[fname]) > 0:
+                item["mask_1d"] = np.stack(
+                    [m for _, m in sorted(masks_1d[fname].items())]
+                ).astype(np.uint8)
+
+            if fname in support_widths and len(support_widths[fname]) > 0:
+                item["support_width"] = np.array(
+                    [v for _, v in sorted(support_widths[fname].items())]
+                )
+
+            if fname in accelerations and len(accelerations[fname]) > 0:
+                item["effective_acceleration"] = np.array(
+                    [v for _, v in sorted(accelerations[fname].items())]
+                )
+
+            if fname in acq_starts and len(acq_starts[fname]) > 0:
+                item["acq_start"] = np.array(
+                    [v for _, v in sorted(acq_starts[fname].items())]
+                )
+
+            if fname in acq_ends and len(acq_ends[fname]) > 0:
+                item["acq_end"] = np.array(
+                    [v for _, v in sorted(acq_ends[fname].items())]
+                )
+
+            packed[fname] = item
+
+        if hasattr(self, "trainer"):
+            save_path = pathlib.Path(self.trainer.default_root_dir) / f"reconstructions_{self.model_name}"
+        else:
+            save_path = pathlib.Path.cwd() / "reconstructions"
+
+        self.print(f"Saving reconstructions to {save_path}")
+        save_reconstructions(packed, save_path)
+
+        # NOTE(PL2.x port): clear the manually accumulated outputs.
+        self.test_step_outputs.clear()
+
+    # ============================================================
+    # STATIC
+    # ============================================================
+    @staticmethod
+    def add_model_specific_args(parent_parser):
+        parser = ArgumentParser(parents=[parent_parser], add_help=False)
+        parser.add_argument("--num_log_images", default=16, type=int)
+        return parser
