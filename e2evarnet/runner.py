@@ -232,16 +232,16 @@ def _get_single_learnable_mask_params(args):
 # MODEL BUILDERS
 # ============================================================
 def build_base_varnet(args, acceleration: int):
-    if args.varnet_type == "fi_varnet":
-        print(f"BUILDING FI VARNET, chans={args.chans}")
-        return FIVarNet(
-            num_cascades=args.num_cascades,
-            pools=args.pools,
-            chans=args.chans,
-            sens_pools=args.sens_pools,
-            sens_chans=args.sens_chans,
-            acceleration=acceleration,
-        )
+    # if args.varnet_type == "fi_varnet":
+    #     print(f"BUILDING FI VARNET, chans={args.chans}")
+    #     return FIVarNet(
+    #         num_cascades=args.num_cascades,
+    #         pools=args.pools,
+    #         chans=args.chans,
+    #         sens_pools=args.sens_pools,
+    #         sens_chans=args.sens_chans,
+    #         acceleration=acceleration,
+    #     )
 
     if args.varnet_type == "e2e_varnet":
         print(f"BUILDING E2E VARNET, chans={args.chans}")

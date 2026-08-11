@@ -65,32 +65,6 @@ def _check_both_not_none(v1, v2):
     return (v1 is not None) and (v2 is not None)
 
 
-# -------------------------------------------#
-# -------- xml query helper ---------------- #
-# -------------------------------------------#
-# NOTE(recon-migration): et_query now imported from common.mri_header (top of file).
-# Original inline definition commented out below.
-'''
-def et_query(
-    root: etree.Element,
-    qlist: Sequence[str],
-    namespace: str = "http://www.ismrm.org/ISMRMRD",
-) -> str:
-
-    prefix = "ns"
-    ns = {prefix: namespace}
-    query = "."
-
-    for el in qlist:
-        query += f"//{prefix}:{el}"
-
-    value = root.find(query, ns)
-    if value is None:
-        raise RuntimeError("Element not found")
-
-    return str(value.text)
-'''
-
 
 # -------------------------------------------#
 # --------------- Data module -------------- #
