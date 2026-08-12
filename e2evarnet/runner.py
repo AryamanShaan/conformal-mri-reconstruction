@@ -473,7 +473,7 @@ def build_args(cluster_launch: bool = True):
     parser.add_argument(
         "--mask_type",
         choices=("equispaced_fraction", "equispaced", "random_vds"),
-        default="equispaced_fraction",
+        default="random_vds",
         type=str,
     )
 
