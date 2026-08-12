@@ -119,113 +119,114 @@ def check_gpu_availability():
     return int(output)
 
 
-def _adapt_state_dict_for_model(model: torch.nn.Module, state_dict: dict) -> dict:
-    """
-    Adapts checkpoint keys for wrapped learnable-mask models.
+# NOTE: I have commented this funcion as it is used for mode = fine_tune which is not used.
+# def _adapt_state_dict_for_model(model: torch.nn.Module, state_dict: dict) -> dict:
+#     """
+#     Adapts checkpoint keys for wrapped learnable-mask models.
 
-    Case handled:
-      source checkpoint = plain VarNet
-      target model      = LearnableMaskedVarNet(base_varnet=...)
+#     Case handled:
+#       source checkpoint = plain VarNet
+#       target model      = LearnableMaskedVarNet(base_varnet=...)
 
-    Then we remap:
-      conv.weight  -> base_varnet.conv.weight
-    """
-    target_keys = set(model.state_dict().keys())
+#     Then we remap:
+#       conv.weight  -> base_varnet.conv.weight
+#     """
+#     target_keys = set(model.state_dict().keys())
 
-    target_is_wrapper = any(k.startswith("base_varnet.") for k in target_keys)
-    source_is_wrapper = any(
-        k.startswith("base_varnet.") or k.startswith("learnable_mask.")
-        for k in state_dict.keys()
-    )
+#     target_is_wrapper = any(k.startswith("base_varnet.") for k in target_keys)
+#     source_is_wrapper = any(
+#         k.startswith("base_varnet.") or k.startswith("learnable_mask.")
+#         for k in state_dict.keys()
+#     )
 
-    if target_is_wrapper and not source_is_wrapper:
-        state_dict = {f"base_varnet.{k}": v for k, v in state_dict.items()}
+#     if target_is_wrapper and not source_is_wrapper:
+#         state_dict = {f"base_varnet.{k}": v for k, v in state_dict.items()}
 
-    return state_dict
+#     return state_dict
 
+# NOTE: I have commented this funcion as it is used for mode = fine_tune which is not used.
+# def _filter_state_dict_by_prefix(state_dict: dict, module_name: str) -> dict:
+#     lm = len(module_name)
+#     return {
+#         k[lm:]: v
+#         for k, v in state_dict.items()
+#         if k.startswith(module_name)
+#     }
 
-def _filter_state_dict_by_prefix(state_dict: dict, module_name: str) -> dict:
-    lm = len(module_name)
-    return {
-        k[lm:]: v
-        for k, v in state_dict.items()
-        if k.startswith(module_name)
-    }
+# NOTE: I have commented this funcion as it is used for mode = fine_tune which is not used.
+# def _get_varnet_state_dict_from_checkpoint(
+#     weight_path: Path,
+#     module_name: str = "fi_varnet.",
+# ) -> dict:
+#     ckpt = torch.load(weight_path, map_location="cpu")
+#     state_dict = ckpt["state_dict"] if "state_dict" in ckpt else ckpt
 
+#     filtered = _filter_state_dict_by_prefix(state_dict, module_name)
 
-def _get_varnet_state_dict_from_checkpoint(
-    weight_path: Path,
-    module_name: str = "fi_varnet.",
-) -> dict:
-    ckpt = torch.load(weight_path, map_location="cpu")
-    state_dict = ckpt["state_dict"] if "state_dict" in ckpt else ckpt
+#     if len(filtered) == 0 and module_name == "fi_varnet.":
+#         filtered = _filter_state_dict_by_prefix(state_dict, "varnet.")
+#     elif len(filtered) == 0 and module_name == "varnet.":
+#         filtered = _filter_state_dict_by_prefix(state_dict, "fi_varnet.")
 
-    filtered = _filter_state_dict_by_prefix(state_dict, module_name)
+#     if len(filtered) == 0:
+#         raise RuntimeError(
+#             f"No VarNet weights found in {weight_path} using prefix '{module_name}'. "
+#             "Tried compatibility prefixes 'fi_varnet.' and 'varnet.' as applicable."
+#         )
 
-    if len(filtered) == 0 and module_name == "fi_varnet.":
-        filtered = _filter_state_dict_by_prefix(state_dict, "varnet.")
-    elif len(filtered) == 0 and module_name == "varnet.":
-        filtered = _filter_state_dict_by_prefix(state_dict, "fi_varnet.")
+#     return filtered
 
-    if len(filtered) == 0:
-        raise RuntimeError(
-            f"No VarNet weights found in {weight_path} using prefix '{module_name}'. "
-            "Tried compatibility prefixes 'fi_varnet.' and 'varnet.' as applicable."
-        )
+# NOTE: I have commented this funcion as it is used for mode = fine_tune which is not used.
+# def load_weights_only(
+#     module,
+#     weight_path: Path,
+#     module_name: str = "fi_varnet.",
+# ):
+#     filtered = _get_varnet_state_dict_from_checkpoint(
+#         weight_path=weight_path,
+#         module_name=module_name,
+#     )
+#     filtered = _adapt_state_dict_for_model(module.fi_varnet, filtered)
 
-    return filtered
+#     missing, unexpected = module.fi_varnet.load_state_dict(filtered, strict=False)
+#     print("load_weights_only:")
+#     print("  missing keys   :", len(missing))
+#     print("  unexpected keys:", len(unexpected))
 
+#     return module
 
-def load_weights_only(
-    module,
-    weight_path: Path,
-    module_name: str = "fi_varnet.",
-):
-    filtered = _get_varnet_state_dict_from_checkpoint(
-        weight_path=weight_path,
-        module_name=module_name,
-    )
-    filtered = _adapt_state_dict_for_model(module.fi_varnet, filtered)
+# NOTE: I have commented this funcion as it is used for mode = fine_tune which is not used.
+# def reload_state_dict(
+#     module,
+#     fname: Path,
+#     module_name: str = "fi_varnet.",
+# ):
+#     print(f"loading model from {fname}")
 
-    missing, unexpected = module.fi_varnet.load_state_dict(filtered, strict=False)
-    print("load_weights_only:")
-    print("  missing keys   :", len(missing))
-    print("  unexpected keys:", len(unexpected))
+#     state_dict = _get_varnet_state_dict_from_checkpoint(
+#         weight_path=fname,
+#         module_name=module_name,
+#     )
+#     state_dict = _adapt_state_dict_for_model(module.fi_varnet, state_dict)
+#     module.fi_varnet.load_state_dict(state_dict, strict=False)
 
-    return module
+#     return module
 
+# NOTE: I have commented this funcion as learnable mask is not used.
+# def _get_single_learnable_mask_params(args):
+#     if len(args.accelerations) != 1:
+#         raise ValueError(
+#             "Learnable mask mode currently requires exactly one acceleration."
+#         )
+#     if len(args.center_fractions) != 1:
+#         raise ValueError(
+#             "Learnable mask mode currently requires exactly one center fraction."
+#         )
 
-def reload_state_dict(
-    module,
-    fname: Path,
-    module_name: str = "fi_varnet.",
-):
-    print(f"loading model from {fname}")
+#     acceleration = int(args.accelerations[0])
+#     center_fraction = float(args.center_fractions[0])
 
-    state_dict = _get_varnet_state_dict_from_checkpoint(
-        weight_path=fname,
-        module_name=module_name,
-    )
-    state_dict = _adapt_state_dict_for_model(module.fi_varnet, state_dict)
-    module.fi_varnet.load_state_dict(state_dict, strict=False)
-
-    return module
-
-
-def _get_single_learnable_mask_params(args):
-    if len(args.accelerations) != 1:
-        raise ValueError(
-            "Learnable mask mode currently requires exactly one acceleration."
-        )
-    if len(args.center_fractions) != 1:
-        raise ValueError(
-            "Learnable mask mode currently requires exactly one center fraction."
-        )
-
-    acceleration = int(args.accelerations[0])
-    center_fraction = float(args.center_fractions[0])
-
-    return acceleration, center_fraction
+#     return acceleration, center_fraction
 
 
 # ============================================================
@@ -369,14 +370,16 @@ def cli_main(args):
     pl_module = fetch_lightning_module(args)
     resume_ckpt = args.resume_from_checkpoint
 
-    if args.mode == "fine_tune":
-        pl_module = load_weights_only(
-            pl_module,
-            Path(args.fine_tune_ckpt),
-            module_name="fi_varnet.",
-        )
-        ckpt_path = None
-    elif args.mode == "train":
+    # NOTE: commented out mode fine_tune as it is not used.
+    # if args.mode == "fine_tune":
+    #     pl_module = load_weights_only(
+    #         pl_module,
+    #         Path(args.fine_tune_ckpt),
+    #         module_name="fi_varnet.",
+    #     )
+    #     ckpt_path = None
+    # elif args.mode == "train":
+    if args.mode == "train":
         ckpt_path = resume_ckpt if resume_ckpt is not None else None
     elif args.mode == "test":
         ckpt_path = resume_ckpt if resume_ckpt is not None else None
@@ -407,7 +410,9 @@ def cli_main(args):
         callbacks=args.callbacks,
     )
 
-    if args.mode in ["train", "fine_tune"]:
+    # NOTE: not using mode fine_tune.
+    # if args.mode in ["train", "fine_tune"]:
+    if args.mode in ["train"]:
         trainer.fit(
             pl_module,
             datamodule=data_module,
@@ -430,11 +435,12 @@ def build_args(cluster_launch: bool = True):
     parser = ArgumentParser()
     parser.add_argument("--log_path", type=Path, default=None)
     parser.add_argument("--model_name", type=str, default="VarNet")
-    parser.add_argument("--fine_tune_ckpt", type=str, default=None)
+    # parser.add_argument("--fine_tune_ckpt", type=str, default=None) # NOTE: commented out fine_tune as it is not used.
     parser.add_argument(
         "--mode",
         default="train",
-        choices=("train", "test", "test_val", "fine_tune"),
+        # choices=("train", "test", "test_val", "fine_tune"), # NOTE: commented out fine_tune as it is not used.
+        choices=("train", "test", "test_val"),
         type=str,
     )
 
