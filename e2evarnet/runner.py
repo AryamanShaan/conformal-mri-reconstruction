@@ -18,7 +18,7 @@ from common.undersampling_patterns import create_mask_for_mask_type
 from e2evarnet.VarNet_module import FIVarNetModule
 # NOTE(recon-migration): LearnableMaskedVarNet dropped (learnable masks unused).
 # from varnets.VarNet import E2EVarNet, FIVarNet, LearnableMaskedVarNet
-from e2evarnet.VarNet import E2EVarNet, FIVarNet
+from e2evarnet.VarNet import E2EVarNet
 
 
 torch.set_float32_matmul_precision("high")
@@ -232,29 +232,31 @@ def check_gpu_availability():
 # ============================================================
 # MODEL BUILDERS
 # ============================================================
-def build_base_varnet(args, acceleration: int):
-    # if args.varnet_type == "fi_varnet":
-    #     print(f"BUILDING FI VARNET, chans={args.chans}")
-    #     return FIVarNet(
-    #         num_cascades=args.num_cascades,
-    #         pools=args.pools,
-    #         chans=args.chans,
-    #         sens_pools=args.sens_pools,
-    #         sens_chans=args.sens_chans,
-    #         acceleration=acceleration,
-    #     )
 
-    if args.varnet_type == "e2e_varnet":
-        print(f"BUILDING E2E VARNET, chans={args.chans}")
-        return E2EVarNet(
-            num_cascades=args.num_cascades,
-            pools=args.pools,
-            chans=args.chans,
-            sens_pools=args.sens_pools,
-            sens_chans=args.sens_chans,
-        )
+# NOTE: commented out since only e2evarnet will be trained, build_base_varnet is not needed.
+# def build_base_varnet(args, acceleration: int):
+#     # if args.varnet_type == "fi_varnet":
+#     #     print(f"BUILDING FI VARNET, chans={args.chans}")
+#     #     return FIVarNet(
+#     #         num_cascades=args.num_cascades,
+#     #         pools=args.pools,
+#     #         chans=args.chans,
+#     #         sens_pools=args.sens_pools,
+#     #         sens_chans=args.sens_chans,
+#     #         acceleration=acceleration,
+#     #     )
 
-    raise ValueError(f"Unknown varnet_type: {args.varnet_type}")
+#     if args.varnet_type == "e2e_varnet":
+#         print(f"BUILDING E2E VARNET, chans={args.chans}")
+#         return E2EVarNet(
+#             num_cascades=args.num_cascades,
+#             pools=args.pools,
+#             chans=args.chans,
+#             sens_pools=args.sens_pools,
+#             sens_chans=args.sens_chans,
+#         )
+
+#     raise ValueError(f"Unknown varnet_type: {args.varnet_type}")
 
 
 def fetch_model(args):
@@ -273,8 +275,23 @@ def fetch_model(args):
     #         num_logits=args.num_logits,
     #     )
 
-    acceleration = int(round(sum(args.accelerations) / len(args.accelerations)))
-    return build_base_varnet(args, acceleration=acceleration)
+    # acceleration = int(round(sum(args.accelerations) / len(args.accelerations)))
+    # return build_base_varnet(args, acceleration=acceleration)
+
+    # copied below fromm build_base_varnet since we are not using learnable mask.
+    if args.varnet_type == "e2e_varnet":
+            print(f"BUILDING E2E VARNET, chans={args.chans}")
+            return E2EVarNet(
+                num_cascades=args.num_cascades,
+                pools=args.pools,
+                chans=args.chans,
+                sens_pools=args.sens_pools,
+                sens_chans=args.sens_chans,
+            )
+
+    raise ValueError(f"Unknown varnet_type: {args.varnet_type}")
+    
+    
 
 
 def fetch_lightning_module(args):
@@ -282,7 +299,8 @@ def fetch_lightning_module(args):
 
     return FIVarNetModule(
         fi_varnet=model,
-        learnable_mask=(args.mask_mode == "learnable"),
+        # learnable_mask=(args.mask_mode == "learnable"),
+        learnable_mask=(False),
         lr=args.lr,
         lr_base=args.lr_base,
         lr_mask=args.lr_mask,
@@ -298,23 +316,23 @@ def fetch_lightning_module(args):
 # TRANSFORMS
 # ============================================================
 def build_transforms(args):
-    if args.mask_mode == "learnable":
-        train_transform = VarNetDataTransform(
-            mask_func=None,
-            use_seed=False,
-            learnable_mask=True,
-        )
-        val_transform = VarNetDataTransform(
-            mask_func=None,
-            use_seed=True,
-            learnable_mask=True,
-        )
-        test_transform = VarNetDataTransform(
-            mask_func=None,
-            use_seed=True,
-            learnable_mask=True,
-        )
-        return train_transform, val_transform, test_transform
+    # if args.mask_mode == "learnable":
+    #     train_transform = VarNetDataTransform(
+    #         mask_func=None,
+    #         use_seed=False,
+    #         learnable_mask=True,
+    #     )
+    #     val_transform = VarNetDataTransform(
+    #         mask_func=None,
+    #         use_seed=True,
+    #         learnable_mask=True,
+    #     )
+    #     test_transform = VarNetDataTransform(
+    #         mask_func=None,
+    #         use_seed=True,
+    #         learnable_mask=True,
+    #     )
+    #     return train_transform, val_transform, test_transform
 
     mask = create_mask_for_mask_type(
         args.mask_type,
@@ -446,7 +464,8 @@ def build_args(cluster_launch: bool = True):
 
     parser.add_argument(
         "--mask_mode",
-        choices=("fixed", "learnable"),
+        # choices=("fixed", "learnable"),
+        choices=("fixed"),  # NOTE: commented out learnable as it is not used.
         default="fixed",
         type=str,
     )
