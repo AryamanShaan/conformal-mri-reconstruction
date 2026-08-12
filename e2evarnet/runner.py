@@ -404,7 +404,7 @@ def cli_main(args):
     else:
         raise ValueError(f"Unsupported mode: {args.mode}")
 
-    args.resume_from_checkpoint = None
+    # args.resume_from_checkpoint = None
     # NOTE(PL2.x port): Trainer.from_argparse_args was removed in Lightning 2.0;
     # the Trainer is now constructed explicitly with the same settings it used
     # to pick up from the args namespace.
@@ -465,7 +465,7 @@ def build_args(cluster_launch: bool = True):
     parser.add_argument(
         "--mask_mode",
         # choices=("fixed", "learnable"),
-        choices=("fixed"),  # NOTE: commented out learnable as it is not used.
+        # choices=("fixed"),  # NOTE: commented out learnable as it is not used.
         default="fixed",
         type=str,
     )
@@ -488,8 +488,8 @@ def build_args(cluster_launch: bool = True):
 
     parser.add_argument(
         "--varnet_type",
-        choices=("fi_varnet", "e2e_varnet"),
-        default="fi_varnet",
+        # choices=("fi_varnet", "e2e_varnet"),
+        default="e2e_varnet",
     )
 
     parser = DataModule.add_data_specific_args(parser)
@@ -508,7 +508,8 @@ def build_args(cluster_launch: bool = True):
         raise ValueError(f"Unknown varnet_type: {args.varnet_type}")
 
     parser.set_defaults(
-        mask_type="equispaced_fraction",
+        # mask_type="equispaced_fraction",
+        mask_type="random_vds",
         batch_size=1,
         test_path=None,
         combine_train_val=True,
@@ -597,10 +598,10 @@ def build_args(cluster_launch: bool = True):
             )
         )
 
-    if args.resume_from_checkpoint is None:
-        ckpt_list = sorted(checkpoint_dir.glob("*.ckpt"), key=os.path.getmtime)
-        if ckpt_list:
-            args.resume_from_checkpoint = str(ckpt_list[-1])
+    # if args.resume_from_checkpoint is None:
+    #     ckpt_list = sorted(checkpoint_dir.glob("*.ckpt"), key=os.path.getmtime)
+    #     if ckpt_list:
+    #         args.resume_from_checkpoint = str(ckpt_list[-1])
 
     return args
 
