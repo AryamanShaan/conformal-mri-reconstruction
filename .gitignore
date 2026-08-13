@@ -2,6 +2,7 @@
 # (If you later want the file-map in the repo, remove the docs/ line.)
 CLAUDE.md
 docs/
+diff_helper/
 
 # Python
 __pycache__/
