@@ -18,7 +18,7 @@ class FIVarNetModule(MriModule):
     def __init__(
         self,
         fi_varnet: FIVarNet,
-        learnable_mask: bool = False,
+        # learnable_mask: bool = False,
         model_name: str = "default_model",
         lr: float = 3e-4,
         lr_base: Optional[float] = None,
@@ -49,20 +49,20 @@ class FIVarNetModule(MriModule):
 
         self.fi_varnet = fi_varnet
         self.ssim_loss = SSIMLoss()
-        self.learnable_mask = learnable_mask
+        # self.learnable_mask = learnable_mask
 
     def forward(self, batch, return_mask_extras: bool = False):
         return self._run_reconstruction_model(batch, return_mask_extras=return_mask_extras)
 
     def _run_reconstruction_model(self, batch, return_mask_extras: bool = False):
-        if self.learnable_mask:
-            return self.fi_varnet(
-                full_kspace=batch.full_kspace,
-                acq_start=batch.acq_start,
-                acq_end=batch.acq_end,
-                crop_size=batch.crop_size,
-                return_mask_extras=return_mask_extras,
-            )
+        # if self.learnable_mask:
+        #     return self.fi_varnet(
+        #         full_kspace=batch.full_kspace,
+        #         acq_start=batch.acq_start,
+        #         acq_end=batch.acq_end,
+        #         crop_size=batch.crop_size,
+        #         return_mask_extras=return_mask_extras,
+        #     )
 
         return self.fi_varnet(
             batch.masked_kspace,
@@ -71,35 +71,35 @@ class FIVarNetModule(MriModule):
             crop_size=batch.crop_size,
         )
 
-    def _get_latest_mask_info(self):
-        if not self.learnable_mask:
-            return None
-        if not hasattr(self.fi_varnet, "latest_mask_info"):
-            return None
-        return self.fi_varnet.latest_mask_info
+    # def _get_latest_mask_info(self):
+    #     if not self.learnable_mask:
+    #         return None
+    #     if not hasattr(self.fi_varnet, "latest_mask_info"):
+    #         return None
+    #     return self.fi_varnet.latest_mask_info
 
-    def _log_learnable_mask_stats(self, stage: str):
-        info = self._get_latest_mask_info()
-        if info is None:
-            return
+    # def _log_learnable_mask_stats(self, stage: str):
+    #     info = self._get_latest_mask_info()
+    #     if info is None:
+    #         return
 
-        if "sampled_lines" in info:
-            self.log(f"{stage}/sampled_lines", info["sampled_lines"].mean().detach(), sync_dist=True)
-        if "support_width" in info:
-            self.log(f"{stage}/support_width", info["support_width"].mean().detach(), sync_dist=True)
-        if "effective_acceleration" in info:
-            self.log(f"{stage}/acceleration", info["effective_acceleration"].mean().detach(), sync_dist=True)
-        if "outer_prob_raw_mean" in info:
-            self.log(f"{stage}/mask_prob_raw_mean", info["outer_prob_raw_mean"].mean().detach(), sync_dist=True)
-        if "outer_prob_mean" in info:
-            self.log(f"{stage}/mask_prob_mean", info["outer_prob_mean"].mean().detach(), sync_dist=True)
-        if "prob_mask_1d" in info:
-            prob_mask_1d = info["prob_mask_1d"]
-            self.log(f"{stage}/mask_prob_std", prob_mask_1d.std().detach(), sync_dist=True)
-        if "target_outer_mean" in info:
-            self.log(f"{stage}/target_outer_mean", info["target_outer_mean"].mean().detach(), sync_dist=True)
-        if "target_total_ratio" in info:
-            self.log(f"{stage}/target_total_ratio", info["target_total_ratio"].mean().detach(), sync_dist=True)
+    #     if "sampled_lines" in info:
+    #         self.log(f"{stage}/sampled_lines", info["sampled_lines"].mean().detach(), sync_dist=True)
+    #     if "support_width" in info:
+    #         self.log(f"{stage}/support_width", info["support_width"].mean().detach(), sync_dist=True)
+    #     if "effective_acceleration" in info:
+    #         self.log(f"{stage}/acceleration", info["effective_acceleration"].mean().detach(), sync_dist=True)
+    #     if "outer_prob_raw_mean" in info:
+    #         self.log(f"{stage}/mask_prob_raw_mean", info["outer_prob_raw_mean"].mean().detach(), sync_dist=True)
+    #     if "outer_prob_mean" in info:
+    #         self.log(f"{stage}/mask_prob_mean", info["outer_prob_mean"].mean().detach(), sync_dist=True)
+    #     if "prob_mask_1d" in info:
+    #         prob_mask_1d = info["prob_mask_1d"]
+    #         self.log(f"{stage}/mask_prob_std", prob_mask_1d.std().detach(), sync_dist=True)
+    #     if "target_outer_mean" in info:
+    #         self.log(f"{stage}/target_outer_mean", info["target_outer_mean"].mean().detach(), sync_dist=True)
+    #     if "target_total_ratio" in info:
+    #         self.log(f"{stage}/target_total_ratio", info["target_total_ratio"].mean().detach(), sync_dist=True)
 
     def _compute_reconstruction_loss(self, batch, output):
         target, output = center_crop_to_smallest(batch.target, output)
@@ -119,22 +119,26 @@ class FIVarNetModule(MriModule):
         target, output, loss, ssim_loss = self._compute_reconstruction_loss(batch, output)
 
         self.log("train/ssim", ssim_loss.detach(), sync_dist=True)
-        self._log_learnable_mask_stats("train")
+        # self._log_learnable_mask_stats("train")
         self.log("train/loss", loss.detach(), sync_dist=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         mask_1d = None
 
-        if self.learnable_mask:
-            output, mask_info = self._run_reconstruction_model(batch, return_mask_extras=True)
-            mask_1d = mask_info.get("hard_mask_1d", None)
-        else:
-            output = self._run_reconstruction_model(batch, return_mask_extras=False)
+        # if self.learnable_mask:
+        #     output, mask_info = self._run_reconstruction_model(batch, return_mask_extras=True)
+        #     mask_1d = mask_info.get("hard_mask_1d", None)
+        # else:
+        
+        # The below block was part of the above else block, but since learnable_mask is not used, it's outside if-else block now.
+        ##################################################################
+        output = self._run_reconstruction_model(batch, return_mask_extras=False)
+        ##################################################################
 
         target, output, reconstruction_loss, ssim_loss = self._compute_reconstruction_loss(batch, output)
 
-        self._log_learnable_mask_stats("val")
+        # self._log_learnable_mask_stats("val")
 
         return {
             "batch_idx": batch_idx,
@@ -154,26 +158,30 @@ class FIVarNetModule(MriModule):
         support_width = None
         effective_acceleration = None
 
-        if self.learnable_mask:
-            output, mask_info = self._run_reconstruction_model(
-                batch, return_mask_extras=True
-            )
-            mask_1d = mask_info.get("hard_mask_1d", None)
-            support_width = mask_info.get("support_width", None)
-            effective_acceleration = mask_info.get("effective_acceleration", None)
-        else:
-            output = self._run_reconstruction_model(batch, return_mask_extras=False)
+        # if self.learnable_mask:
+        #     output, mask_info = self._run_reconstruction_model(
+        #         batch, return_mask_extras=True
+        #     )
+        #     mask_1d = mask_info.get("hard_mask_1d", None)
+        #     support_width = mask_info.get("support_width", None)
+        #     effective_acceleration = mask_info.get("effective_acceleration", None)
+        # else:
 
-            fixed_mask = batch.mask
-            if fixed_mask is not None:
-                # batch.mask shape: [B, 1, 1, W, 1]
-                mask_1d = fixed_mask[:, 0, 0, :, 0].to(torch.uint8)
+        # The below block was part of the above else block, but since learnable_mask is not used, it's outside if-else block now.
+        ####################################################
+        output = self._run_reconstruction_model(batch, return_mask_extras=False)
 
-            support_width = (batch.acq_end - batch.acq_start).to(torch.float32)
+        fixed_mask = batch.mask
+        if fixed_mask is not None:
+            # batch.mask shape: [B, 1, 1, W, 1]
+            mask_1d = fixed_mask[:, 0, 0, :, 0].to(torch.uint8)
 
-            if mask_1d is not None:
-                sampled_lines = mask_1d.sum(dim=1).to(torch.float32)
-                effective_acceleration = support_width / sampled_lines.clamp_min(1.0)
+        support_width = (batch.acq_end - batch.acq_start).to(torch.float32)
+
+        if mask_1d is not None:
+            sampled_lines = mask_1d.sum(dim=1).to(torch.float32)
+            effective_acceleration = support_width / sampled_lines.clamp_min(1.0)
+        ####################################################
 
         crop_size = (
             (output.shape[-1], output.shape[-1])
@@ -182,7 +190,7 @@ class FIVarNetModule(MriModule):
         )
         output = center_crop(output, crop_size)
 
-        self._log_learnable_mask_stats("test")
+        # self._log_learnable_mask_stats("test")
 
         return {
             "fname": batch.fname,
@@ -207,32 +215,34 @@ class FIVarNetModule(MriModule):
         lr_base = self.lr if self.lr_base is None else self.lr_base
         lr_mask = self.lr if self.lr_mask is None else self.lr_mask
 
-        if (
-            self.learnable_mask
-            and hasattr(self.fi_varnet, "base_varnet")
-            and hasattr(self.fi_varnet, "learnable_mask")
-        ):
-            optimizer = torch.optim.AdamW(
-                [
-                    {
-                        "params": self.fi_varnet.base_varnet.parameters(),
-                        "lr": lr_base,
-                        "weight_decay": self.weight_decay,
-                    },
-                    {
-                        "params": self.fi_varnet.learnable_mask.parameters(),
-                        "lr": lr_mask,
-                        "weight_decay": self.weight_decay,
-                    },
-                ]
-            )
-        else:
-            optimizer = torch.optim.AdamW(
-                self.fi_varnet.parameters(),
-                lr=self.lr,
-                weight_decay=self.weight_decay,
-            )
-
+        # if (
+        #     self.learnable_mask
+        #     and hasattr(self.fi_varnet, "base_varnet")
+        #     and hasattr(self.fi_varnet, "learnable_mask")
+        # ):
+        #     optimizer = torch.optim.AdamW(
+        #         [
+        #             {
+        #                 "params": self.fi_varnet.base_varnet.parameters(),
+        #                 "lr": lr_base,
+        #                 "weight_decay": self.weight_decay,
+        #             },
+        #             {
+        #                 "params": self.fi_varnet.learnable_mask.parameters(),
+        #                 "lr": lr_mask,
+        #                 "weight_decay": self.weight_decay,
+        #             },
+        #         ]
+        #     )
+        # else:
+        # The below block was part of the above else block, but since learnable_mask is not used, it's outside if-else block now.
+        ####################################################
+        optimizer = torch.optim.AdamW(
+            self.fi_varnet.parameters(),
+            lr=self.lr,
+            weight_decay=self.weight_decay,
+        )
+        ####################################################
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, step_fn)
         return [optimizer], [{"scheduler": scheduler, "interval": "step"}]
 

@@ -300,7 +300,6 @@ def fetch_lightning_module(args):
     return FIVarNetModule(
         fi_varnet=model,
         # learnable_mask=(args.mask_mode == "learnable"),
-        learnable_mask=(False),
         lr=args.lr,
         lr_base=args.lr_base,
         lr_mask=args.lr_mask,
