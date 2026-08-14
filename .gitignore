@@ -12,3 +12,7 @@ __pycache__/
 
 # OS / editor cruft
 .DS_Store
+
+# Keep logs/ directory, ignore everything generated inside it
+/logs/*
+!/logs/.gitkeep

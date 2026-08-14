@@ -1,0 +1,55 @@
+# =============================================================================
+# E2E-VarNet training config -- knee, random_vds (fixed) masking.
+# Consumed by e2evarnet/runner.py via `--config`. Keys are argparse dests
+# (underscores). Explicit CLI flags override anything here.
+#
+# Only GPU count is owned by SLURM (slurm_scipts/run_varnet.sh): set #SBATCH
+# --gres=gpu:N and runner auto-detects --devices from nvidia-smi. Everything else
+# the training script needs -- including num_workers -- lives in this file.
+# (Keep num_workers sensible vs the SLURM --cpus-per-task in the slurm script.)
+#
+# NOTE: max_steps / ramp_steps / cosine_decay_start below assume 4 GPUs,
+# batch_size 1, combined train+val (~36,492 slices -> 9123 steps/epoch -> 60 epochs).
+# If you change GPU count / batch_size / combine_train_val, recompute them:
+#   steps_per_epoch = num_slices / (batch_size * num_gpus)
+#   max_steps       = target_epochs * steps_per_epoch
+# =============================================================================
+
+# ---- run identity / output ----
+model_name: e2e_knee_rvds
+log_path: /gpfs/scratch/shaana01/conformal-mri-reconstruction-logs/varnet_runs/run_2
+mode: train
+varnet_type: e2e_varnet
+
+# ---- data ----
+data_path: /gpfs/scratch/shaana01/knee_fastmri_cp                 # parent; needs a multicoil_test subdir (prepare_data caches it)
+data_path_train: /gpfs/scratch/shaana01/knee_fastmri_cp/multicoil_train
+data_path_val: /gpfs/scratch/shaana01/knee_fastmri_cp/multicoil_val
+combine_train_val: true            # true = leaderboard mode (val subset of train); false = held-out val
+
+# ---- masking (random_vds) ----
+mask_mode: fixed
+mask_type: random_vds
+min_k_fraction: 0.05
+max_k_fraction: 0.99
+accelerations: [8]                 # ignored by random_vds; kept for other fixed-mask types
+center_fractions: [0.04]           # ignored by random_vds; kept for other fixed-mask types
+
+# ---- model ----
+num_cascades: 12
+chans: 32
+pools: 4
+sens_chans: 8
+sens_pools: 4
+
+# ---- optimization / schedule ----
+lr: 0.0003
+weight_decay: 0.0
+max_steps: 547380
+ramp_steps: 19549
+cosine_decay_start: 390986
+
+# ---- runtime ----
+batch_size: 1
+precision: 32
+num_workers: 4

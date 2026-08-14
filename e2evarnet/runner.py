@@ -454,7 +454,24 @@ def cli_main(args):
 def build_args(cluster_launch: bool = True):
     num_gpus = check_gpu_availability()
 
+    # ------------------------------------------------------------------
+    # Optional YAML config support. Load the config FIRST so its values can seed
+    # argparse defaults -- including --log_path / --varnet_type, which are read by
+    # the early parse_known_args() below. Explicit CLI flags still override it
+    # (CLI > config > hardcoded defaults). set_defaults() applies the type= of
+    # each arg to string values, so path strings become Path, etc.
+    # ------------------------------------------------------------------
+    _pre = ArgumentParser(add_help=False)
+    _pre.add_argument("--config", type=Path, default=None)
+    _cfg_args, _ = _pre.parse_known_args()
+    _cfg = {}
+    if _cfg_args.config is not None:
+        import yaml
+        with open(_cfg_args.config) as _f:
+            _cfg = yaml.safe_load(_f) or {}
+
     parser = ArgumentParser()
+    parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--log_path", type=Path, default=None)
     parser.add_argument("--model_name", type=str, default="VarNet")
     # parser.add_argument("--fine_tune_ckpt", type=str, default=None) # NOTE: commented out fine_tune as it is not used.
@@ -497,6 +514,10 @@ def build_args(cluster_launch: bool = True):
     )
 
     parser = DataModule.add_data_specific_args(parser)
+
+    # Seed defaults from the YAML config BEFORE the early parse so --log_path /
+    # --varnet_type (read just below) can be supplied by the config file.
+    parser.set_defaults(**_cfg)
 
     args, _ = parser.parse_known_args()
     if args.log_path is None:
@@ -564,6 +585,11 @@ def build_args(cluster_launch: bool = True):
     # NOTE(PL2.x port): previously auto-added by add_argparse_args; still needed
     # by the auto-resume logic at the bottom of build_args / in cli_main.
     parser.add_argument("--resume_from_checkpoint", type=str, default=None)
+
+    # Re-apply the YAML config LAST so it also overrides the hardcoded
+    # set_defaults(...) for the module + trainer args added above. CLI flags
+    # passed explicitly still take precedence over the config.
+    parser.set_defaults(**_cfg)
 
     args = parser.parse_args()
     args.logger = [
