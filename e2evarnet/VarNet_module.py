@@ -4,7 +4,8 @@ import math
 import torch
 
 from .Network_module import MriModule
-from .VarNet import FIVarNet
+# from .VarNet import FIVarNet
+from e2evarnet.VarNet import E2EVarNet
 # from utilities.functions import center_crop_to_smallest, center_crop
 from common.functions import center_crop_to_smallest, center_crop
 # from utilities.losses import SSIMLoss
@@ -14,10 +15,16 @@ from .losses import SSIMLoss
 torch.set_float32_matmul_precision("high")
 
 
-class FIVarNetModule(MriModule):
+# class FIVarNetModule(MriModule):
+class VarNetModule(MriModule):
     def __init__(
         self,
-        fi_varnet: FIVarNet,
+        # fi_varnet: FIVarNet,
+        num_cascades: int = 12,
+        pools: int = 4,
+        chans: int = 18,
+        sens_pools: int = 4,
+        sens_chans: int = 8,
         # learnable_mask: bool = False,
         model_name: str = "default_model",
         lr: float = 3e-4,
@@ -34,6 +41,13 @@ class FIVarNetModule(MriModule):
         **kwargs,
     ):
         super().__init__(model_name=model_name, **kwargs)
+        self.save_hyperparameters()
+
+        self.num_cascades = num_cascades
+        self.pools = pools
+        self.chans = chans
+        self.sens_pools = sens_pools
+        self.sens_chans = sens_chans
 
         self.lr = lr
         self.lr_base = lr if lr_base is None else lr_base
@@ -47,9 +61,17 @@ class FIVarNetModule(MriModule):
         self.weight_decay = weight_decay
         self.drop_prob = drop_prob
 
-        self.fi_varnet = fi_varnet
+        # self.fi_varnet = fi_varnet
         self.ssim_loss = SSIMLoss()
         # self.learnable_mask = learnable_mask
+
+        self.varnet = E2EVarNet(
+            num_cascades=self.num_cascades,
+            sens_chans=self.sens_chans,
+            sens_pools=self.sens_pools,
+            chans=self.chans,
+            pools=self.pools,
+        )
 
     def forward(self, batch, return_mask_extras: bool = False):
         return self._run_reconstruction_model(batch, return_mask_extras=return_mask_extras)
@@ -64,7 +86,7 @@ class FIVarNetModule(MriModule):
         #         return_mask_extras=return_mask_extras,
         #     )
 
-        return self.fi_varnet(
+        return self.varnet(
             batch.masked_kspace,
             batch.mask,
             batch.num_low_frequencies,
@@ -238,7 +260,8 @@ class FIVarNetModule(MriModule):
         # The below block was part of the above else block, but since learnable_mask is not used, it's outside if-else block now.
         ####################################################
         optimizer = torch.optim.AdamW(
-            self.fi_varnet.parameters(),
+            # self.fi_varnet.parameters(),
+            self.varnet.parameters(),
             lr=self.lr,
             weight_decay=self.weight_decay,
         )

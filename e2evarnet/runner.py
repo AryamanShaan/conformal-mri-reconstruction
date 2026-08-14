@@ -15,10 +15,10 @@ from e2evarnet.data_transforms import VarNetDataTransform
 # from data.undersampling_patterns import create_mask_for_mask_type
 from common.undersampling_patterns import create_mask_for_mask_type
 # from varnets.VarNet_module import FIVarNetModule
-from e2evarnet.VarNet_module import FIVarNetModule
+from e2evarnet.VarNet_module import VarNetModule
 # NOTE(recon-migration): LearnableMaskedVarNet dropped (learnable masks unused).
 # from varnets.VarNet import E2EVarNet, FIVarNet, LearnableMaskedVarNet
-from e2evarnet.VarNet import E2EVarNet
+# from e2evarnet.VarNet import E2EVarNet
 
 
 torch.set_float32_matmul_precision("high")
@@ -259,46 +259,51 @@ def check_gpu_availability():
 #     raise ValueError(f"Unknown varnet_type: {args.varnet_type}")
 
 
-def fetch_model(args):
-    # NOTE(recon-migration): learnable-mask path dropped (LearnableMaskedVarNet removed).
-    # if args.mask_mode == "learnable":
-    #     acceleration, center_fraction = _get_single_learnable_mask_params(args)
-    #     base_varnet = build_base_varnet(args, acceleration=acceleration)
-    #     print(
-    #         f"WRAPPING WITH LEARNABLE CARTESIAN MASK, "
-    #         f"acceleration={acceleration}, center_fraction={center_fraction}"
-    #     )
-    #     return LearnableMaskedVarNet(
-    #         base_varnet=base_varnet,
-    #         acceleration=acceleration,
-    #         center_fraction=center_fraction,
-    #         num_logits=args.num_logits,
-    #     )
+# def fetch_model(args):
+#     # NOTE(recon-migration): learnable-mask path dropped (LearnableMaskedVarNet removed).
+#     # if args.mask_mode == "learnable":
+#     #     acceleration, center_fraction = _get_single_learnable_mask_params(args)
+#     #     base_varnet = build_base_varnet(args, acceleration=acceleration)
+#     #     print(
+#     #         f"WRAPPING WITH LEARNABLE CARTESIAN MASK, "
+#     #         f"acceleration={acceleration}, center_fraction={center_fraction}"
+#     #     )
+#     #     return LearnableMaskedVarNet(
+#     #         base_varnet=base_varnet,
+#     #         acceleration=acceleration,
+#     #         center_fraction=center_fraction,
+#     #         num_logits=args.num_logits,
+#     #     )
 
-    # acceleration = int(round(sum(args.accelerations) / len(args.accelerations)))
-    # return build_base_varnet(args, acceleration=acceleration)
+#     # acceleration = int(round(sum(args.accelerations) / len(args.accelerations)))
+#     # return build_base_varnet(args, acceleration=acceleration)
 
-    # copied below fromm build_base_varnet since we are not using learnable mask.
-    if args.varnet_type == "e2e_varnet":
-            print(f"BUILDING E2E VARNET, chans={args.chans}")
-            return E2EVarNet(
-                num_cascades=args.num_cascades,
-                pools=args.pools,
-                chans=args.chans,
-                sens_pools=args.sens_pools,
-                sens_chans=args.sens_chans,
-            )
+#     # copied below fromm build_base_varnet since we are not using learnable mask.
+#     if args.varnet_type == "e2e_varnet":
+#             print(f"BUILDING E2E VARNET, chans={args.chans}")
+#             return E2EVarNet(
+#                 num_cascades=args.num_cascades,
+#                 pools=args.pools,
+#                 chans=args.chans,
+#                 sens_pools=args.sens_pools,
+#                 sens_chans=args.sens_chans,
+#             )
 
-    raise ValueError(f"Unknown varnet_type: {args.varnet_type}")
+#     raise ValueError(f"Unknown varnet_type: {args.varnet_type}")
     
     
 
 
 def fetch_lightning_module(args):
-    model = fetch_model(args)
+    # model = fetch_model(args)
 
-    return FIVarNetModule(
-        fi_varnet=model,
+    return VarNetModule(
+        num_cascades=args.num_cascades,
+        pools=args.pools,
+        chans=args.chans,
+        sens_pools=args.sens_pools,
+        sens_chans=args.sens_chans,
+        # fi_varnet=model,
         # learnable_mask=(args.mask_mode == "learnable"),
         lr=args.lr,
         lr_base=args.lr_base,
@@ -499,10 +504,10 @@ def build_args(cluster_launch: bool = True):
 
     if args.varnet_type == "e2e_varnet":
         default_root_dir = args.log_path / "e2e_varnet"
-        module_arg_adder = FIVarNetModule.add_model_specific_args
+        module_arg_adder = VarNetModule.add_model_specific_args
     elif args.varnet_type == "fi_varnet":
         default_root_dir = args.log_path / "fi_varnet"
-        module_arg_adder = FIVarNetModule.add_model_specific_args
+        module_arg_adder = VarNetModule.add_model_specific_args
     else:
         raise ValueError(f"Unknown varnet_type: {args.varnet_type}")
 

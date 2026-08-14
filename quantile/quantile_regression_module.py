@@ -3,6 +3,11 @@
 # backbone (FIVarNetModule) this does NOT work -- it must be rewritten to build a
 # bare E2EVarNet from ckpt["hyper_parameters"], strip the "fi_varnet." prefix, and
 # load_state_dict(strict=False). NOT done yet. See docs/VARNET_FASTMRI_FILE_MAP.md.
+#
+# UPDATE(recon-migration): RESOLVED. VarNetModule was reworked to mirror fastMRI -- it builds
+# E2EVarNet internally and calls save_hyperparameters(), so its checkpoints carry
+# `hyper_parameters` and a `varnet.` prefix. The loader below now works AS-IS (no bare-load /
+# prefix-strip rewrite needed). See the working import further down.
 from __future__ import annotations
 
 from argparse import ArgumentParser
@@ -19,6 +24,10 @@ from common.undersampling_patterns import create_mask_for_mask_type
 # still PENDING (deferred -- see the loader TODO at the top of this file). Left
 # commented until the bare-E2EVarNet load is written; the class no longer exists here.
 # from fastMRI.fastmri.pl_modules import VarNetModule
+# NOTE(recon-migration): use THIS repo's VarNetModule (mirrors fastMRI: internal E2EVarNet build
+# + save_hyperparameters, `varnet.` prefix). load_from_checkpoint rebuilds the model from
+# hyper_parameters, so `VarNetModule.load_from_checkpoint(...).varnet` below works directly.
+from e2evarnet.VarNet_module import VarNetModule
 
 # NOTE(recon-migration): QuantileBoundNormUnet dropped -- vanilla U-Net only.
 # from fastMRI.quantile_regression_batches.quantile_bound_norm_unet import QuantileBoundNormUnet
