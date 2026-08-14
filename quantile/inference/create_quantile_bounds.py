@@ -28,7 +28,8 @@ from __future__ import annotations
 # Checkpoint loading:
 #   * VarNet: a leaderboard Lightning VarNetModule .ckpt -- weights under
 #     state_dict["varnet.*"], arch in ckpt["hyper_parameters"]. Loaded into a
-#     bare fastmri VarNet (no Lightning import), same as varnet_ssim_score_2.py.
+#     bare fastmri VarNet (no Lightning import), same as
+#     e2evarnet/inference/varnet_ssim_scores.py.
 #   * Quantile U-Nets: FrozenVarNetQuantileModule .ckpt -- the trained U-Net
 #     weights live under state_dict["quantile_unet.*"], arch/quantile in
 #     ckpt["hyper_parameters"]. We rebuild a bare QuantileBoundOriginalUnet
@@ -92,7 +93,11 @@ from quantile.quantile_bound_original_unet import QuantileBoundOriginalUnet
 # from fastMRI.quantile_regression_batches.inference.incremental_mask import (
 #     IncrementalVariableDensityMaskFunc,
 # )
-from quantile.inference.incremental_mask import IncrementalVariableDensityMaskFunc
+# NOTE(recon-migration): incremental_mask.py moved quantile/inference/ -> common/
+# (2026-08-14) -- it's a mask pattern (sibling of RandomVariableDensityMaskFunc)
+# and self-contained, so it belongs in the shared layer.
+# from quantile.inference.incremental_mask import IncrementalVariableDensityMaskFunc
+from common.incremental_mask import IncrementalVariableDensityMaskFunc
 
 
 def load_varnet(checkpoint_path: Path, device: torch.device) -> torch.nn.Module:
@@ -101,7 +106,7 @@ def load_varnet(checkpoint_path: Path, device: torch.device) -> torch.nn.Module:
     The Lightning VarNetModule stores the network under 'varnet.' in state_dict
     and its constructor args in ckpt['hyper_parameters']. We rebuild the bare
     fastmri VarNet from those and load the stripped state_dict (no PL import).
-    Identical to varnet_ssim_score_2.py.
+    Identical to e2evarnet/inference/varnet_ssim_scores.py.
     """
     ckpt = torch.load(str(checkpoint_path), map_location="cpu", weights_only=False)
 

@@ -260,7 +260,7 @@ if __name__ == "__main__":
     main()
 
 
-# Run from the QR root so the `fastMRI.fastmri.*` package resolves (same way the
-# other fastMRI-repo scripts are run, e.g. varnet_knee_leaderboard.py):
+# Run from the conformal-mri-reconstruction repo root so the `common.*` /
+# `e2evarnet.*` packages resolve (put the repo root on PYTHONPATH):
 # export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
-# python quantile_regression_batches/inference/varnet_ssim_score_2.py
+# python e2evarnet/inference/varnet_ssim_scores.py

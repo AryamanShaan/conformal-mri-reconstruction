@@ -5,7 +5,7 @@ ISMRMRD XML header query helper, extracted verbatim from /VarNet's
 data/data_module.py (the same function also lives in /fastMRI's data/mri_data.py).
 
 Lifted into common/ because BOTH e2evarnet (SliceDataset metadata parsing) and
-quantile (inference/varnet_ssim_score_2.py) need `et_query`, without either
+e2evarnet inference (inference/varnet_ssim_scores.py) need `et_query`, without either
 having to import the whole data_module.
 """
 
