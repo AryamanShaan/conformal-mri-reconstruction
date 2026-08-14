@@ -302,7 +302,7 @@ def fetch_lightning_module(args):
         # learnable_mask=(args.mask_mode == "learnable"),
         lr=args.lr,
         lr_base=args.lr_base,
-        lr_mask=args.lr_mask,
+        # lr_mask=args.lr_mask,  # NOTE(learnable-mask unused)
         model_name=args.model_name,
         weight_decay=args.weight_decay,
         max_steps=args.max_steps,
@@ -525,7 +525,7 @@ def build_args(cluster_launch: bool = True):
         sens_chans=8,
         lr=0.0003,
         lr_base=None,
-        lr_mask=None,
+        # lr_mask=None,  # NOTE(learnable-mask unused)
         ramp_steps=7500,
         cosine_decay_start=150000,
         weight_decay=0.0,

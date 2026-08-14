@@ -22,7 +22,7 @@ class FIVarNetModule(MriModule):
         model_name: str = "default_model",
         lr: float = 3e-4,
         lr_base: Optional[float] = None,
-        lr_mask: Optional[float] = None,
+        # lr_mask: Optional[float] = None,  # NOTE(learnable-mask unused): only fed the commented learnable param-group.
         lr_step_size: int = 40,
         lr_gamma: float = 0.1,
         max_epochs: int = 50,
@@ -37,7 +37,7 @@ class FIVarNetModule(MriModule):
 
         self.lr = lr
         self.lr_base = lr if lr_base is None else lr_base
-        self.lr_mask = lr if lr_mask is None else lr_mask
+        # self.lr_mask = lr if lr_mask is None else lr_mask  # NOTE(learnable-mask unused)
         self.lr_step_size = lr_step_size
         self.lr_gamma = lr_gamma
         self.max_epochs = max_epochs
@@ -213,7 +213,7 @@ class FIVarNetModule(MriModule):
             return max(math.cos(angle), 1e-8)
 
         lr_base = self.lr if self.lr_base is None else self.lr_base
-        lr_mask = self.lr if self.lr_mask is None else self.lr_mask
+        # lr_mask = self.lr if self.lr_mask is None else self.lr_mask  # NOTE(learnable-mask unused)
 
         # if (
         #     self.learnable_mask
@@ -258,7 +258,7 @@ class FIVarNetModule(MriModule):
         parser.add_argument("--sens_chans", type=int, default=8)
         parser.add_argument("--lr", type=float, default=3e-4)
         parser.add_argument("--lr_base", type=float, default=None)
-        parser.add_argument("--lr_mask", type=float, default=None)
+        # parser.add_argument("--lr_mask", type=float, default=None)  # NOTE(learnable-mask unused)
         parser.add_argument("--lr_step_size", type=int, default=40)
         parser.add_argument("--lr_gamma", type=float, default=0.1)
         parser.add_argument("--ramp_steps", type=int, default=2618)
