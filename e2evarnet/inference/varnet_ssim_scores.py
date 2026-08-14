@@ -174,6 +174,34 @@ def main() -> None:
     seed = 100
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    # --- optional: SSIM-spread exports (for box-and-whisker plots later) ---
+    # The `results` table saved at the end keeps only *averaged* SSIM (one number
+    # per rate), which hides the distribution. These two optional dumps preserve
+    # the spread so a downstream Jupyter nb can boxplot it. Both use the "evalpy"
+    # SSIM (data_range = volume max attrs["max"]) -- the fastMRI leaderboard
+    # convention, i.e. column (b) of the printed table below. Each is gated by its
+    # own flag, so you only spend cluster disk on the .pt you actually want.
+    #
+    # (1) per-SLICE spread: { sampling_fraction: [ssim for EVERY slice at that
+    #     rate, pooled across all volumes] } -- finest-grained distribution.
+    #     Needs in-loop accumulation, so we init the dict here (None if disabled).
+    save_slice_ssim_spread = True
+    slice_ssim_spread_pt = Path(
+        "/gpfs/scratch/shaana01/varnet_ssim_results/leaderboard_run_1_slice_ssim_spread.pt"
+    )
+    slice_ssim_by_rate = (
+        {sf: [] for sf in sampling_fractions} if save_slice_ssim_spread else None
+    )
+    #
+    # (2) per-VOLUME spread: { sampling_fraction: [one volume-averaged ssim per
+    #     volume at that rate] } -- coarser distribution. Built from per_rate_ev
+    #     at the very end (that list already holds the volume averages), so there
+    #     is nothing extra to accumulate inside the loop.
+    save_volume_ssim_spread = True
+    volume_ssim_spread_pt = Path(
+        "/gpfs/scratch/shaana01/varnet_ssim_results/leaderboard_run_1_volume_ssim_spread.pt"
+    )
+
     h5_paths = sorted(data_dir.glob("*.h5"))
     if not h5_paths:
         raise ValueError(f"No HDF5 files found in {data_dir}.")
@@ -233,6 +261,10 @@ def main() -> None:
                 slice_ssims_sk.append(ssim_sk)
                 slice_ssims_ev.append(ssim_ev)
 
+                # per-slice spread export: pool this slice's SSIM under its rate.
+                if save_slice_ssim_spread:
+                    slice_ssim_by_rate[sampling_fraction].append(ssim_ev)
+
             per_rate_sk[rate_idx].append(float(np.mean(slice_ssims_sk)))
             per_rate_ev[rate_idx].append(float(np.mean(slice_ssims_ev)))
 
@@ -254,6 +286,23 @@ def main() -> None:
     # each entry: (sampling_fraction, avg_skimage_ssim, avg_evalpy_ssim)
     torch.save(results, output_pt)
     print(f"Saved: {output_pt}", flush=True)
+
+    # optional SSIM-spread dumps (each guarded by its flag set at the top of main)
+    if save_slice_ssim_spread:
+        slice_ssim_spread_pt.parent.mkdir(parents=True, exist_ok=True)
+        # dict: { sampling_fraction: [per-slice evalpy SSIM, pooled over all volumes] }
+        torch.save(slice_ssim_by_rate, slice_ssim_spread_pt)
+        print(f"Saved slice-SSIM spread: {slice_ssim_spread_pt}", flush=True)
+
+    if save_volume_ssim_spread:
+        volume_ssim_spread_pt.parent.mkdir(parents=True, exist_ok=True)
+        # dict: { sampling_fraction: [per-volume-averaged evalpy SSIM] }
+        # per_rate_ev[i] is already the list of volume averages for rate i.
+        volume_ssim_by_rate = {
+            sf: vols for sf, vols in zip(sampling_fractions, per_rate_ev)
+        }
+        torch.save(volume_ssim_by_rate, volume_ssim_spread_pt)
+        print(f"Saved volume-SSIM spread: {volume_ssim_spread_pt}", flush=True)
 
 
 if __name__ == "__main__":
