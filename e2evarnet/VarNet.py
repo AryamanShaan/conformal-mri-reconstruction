@@ -787,6 +787,29 @@ class E2EVarNet(nn.Module):
 
         return rss(complex_abs(ifft2c(kspace_pred)), dim=1)
 
+    def reconstruct_kspace(
+        self,
+        masked_kspace: torch.Tensor,
+        mask: torch.Tensor,
+        num_low_frequencies: Optional[int] = None,
+        crop_size: Optional[Tuple[int, int]] = None,
+    ) -> torch.Tensor:
+        """Same pipeline as forward, but returns the final multi-coil k-space [B, coils, H, W, 2] instead of the image. Useful for inference"""
+
+        sens_maps = self.sens_net(masked_kspace, mask, num_low_frequencies)
+        kspace_pred = masked_kspace.clone()
+
+        for cascade in self.cascades:
+            kspace_pred = cascade(
+                kspace_pred, 
+                masked_kspace, 
+                mask, 
+                sens_maps, 
+                crop_size=crop_size
+            )
+
+        return kspace_pred
+
 
 # -------------------------------------------#
 # -------- learnable masked varnet --------- #
