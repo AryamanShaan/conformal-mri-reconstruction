@@ -117,7 +117,7 @@ def load_varnet(checkpoint_path: Path, device: torch.device) -> torch.nn.Module:
         num_cascades=hp.get("num_cascades", 12),
         sens_chans=hp.get("sens_chans", 8),
         sens_pools=hp.get("sens_pools", 4),
-        chans=hp.get("chans", 18),
+        chans=hp.get("chans", 32),
         pools=hp.get("pools", 4),
     )
 
