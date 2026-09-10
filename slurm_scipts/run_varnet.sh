@@ -27,10 +27,8 @@ python e2evarnet/runner.py --config configs/e2evarnet_knee_random_vds_6.yaml
 #   cd /gpfs/.../QR/conformal-mri-reconstruction     # the repo root
 #   sbatch slurm_scipts/run_varnet.sh
 
-
-# [shaana01@bigpurple-ln2 conformal-mri-reconstruction]$ 
-# [shaana01@bigpurple-ln2 conformal-mri-reconstruction]$ squeue -u $USER
+# [shaana01@bigpurple-ln3 conformal-mri-reconstruction]$ squeue -u $USER
 #              JOBID PARTITION     NAME     USER ST       TIME  NODES NODELIST(REASON)
-#           26957024 a100_long varnet_k shaana01 PD       0:00      1 (Priority)
-#           26957020 a100_long varnet_k shaana01 PD       0:00      1 (Resources)
-#           26956276 cpu_mediu Check_DF shaana01  R    1:16:37      1 cn-0029
+#           27320489 a100_long varnet_k shaana01 PD       0:00      1 (Resources)
+#           27320650 a100_long varnet_k shaana01 PD       0:00      1 (Priority)
+#           27312331 cpu_mediu Check_DF shaana01  R    1:43:44      1 cn-0024
