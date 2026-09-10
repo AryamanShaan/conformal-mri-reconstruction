@@ -1,0 +1,68 @@
+# =============================================================================
+# E2E-VarNet training config -- knee, random_vds (fixed) masking.
+# Consumed by e2evarnet/runner.py via `--config`. Keys are argparse dests
+# (underscores). Explicit CLI flags override anything here.
+#
+# Only GPU count is owned by SLURM (slurm_scipts/run_varnet.sh): set #SBATCH
+# --gres=gpu:N and runner auto-detects --devices from nvidia-smi. Everything else
+# the training script needs -- including num_workers -- lives in this file.
+# (Keep num_workers sensible vs the SLURM --cpus-per-task in the slurm script.)
+#
+# NOTE: max_steps / ramp_steps / cosine_decay_start below assume 4 GPUs,
+# batch_size 1. UNLIKE _1.._5, this config trains on TRAIN ONLY
+# (combine_train_val: false), so the slice count is SMALLER than the combined
+# ~36,492. The schedule values below are STILL the combined-count values copied
+# from _4 and MUST be recomputed for the train-only slice count:
+#   steps_per_epoch = num_train_slices / (batch_size * num_gpus)   # = N_train / 4
+#   max_steps       = 60 * steps_per_epoch                          # keep 60 epochs
+#   ramp_steps         ~= 0.0357 * max_steps                        # preserve ~2.14-epoch warmup
+#   cosine_decay_start ~= 0.714  * max_steps                        # preserve ~43-epoch decay start
+# =============================================================================
+
+# based on _4 (max_k_fraction 0.50), but TRAIN-ONLY: combine_train_val false so
+# the varnet is trained from scratch on the train split only, with val used as a
+# clean held-out validation set.
+
+# ---- run identity / output ----
+model_name: e2e_knee_rvds
+log_path: /gpfs/scratch/shaana01/conformal-mri-reconstruction-logs/varnet_runs/run_6
+mode: train
+varnet_type: e2e_varnet
+
+# ---- data ----
+data_path: /gpfs/scratch/shaana01/knee_fastmri_cp                 # parent; needs a multicoil_test subdir (prepare_data caches it)
+data_path_train: /gpfs/scratch/shaana01/knee_fastmri_cp/multicoil_train
+data_path_val: /gpfs/scratch/shaana01/knee_fastmri_cp/multicoil_val
+combine_train_val: false           # false = held-out val (train on train only)
+
+# ---- masking (random_vds) ----
+mask_mode: fixed
+mask_type: random_vds
+min_k_fraction: 0.05
+max_k_fraction: 0.50
+accelerations: [8]                 # ignored by random_vds; kept for other fixed-mask types
+center_fractions: [0.04]           # ignored by random_vds; kept for other fixed-mask types
+
+# ---- model ----
+num_cascades: 12
+chans: 32
+pools: 4
+sens_chans: 8
+sens_pools: 4
+
+# ---- optimization / schedule ----
+# Recomputed for TRAIN-ONLY (N_train = 34742 slices, batch_size 1, 4 GPUs):
+#   steps_per_epoch    = 34742 / 4 = 8685.5
+#   max_steps          = 60 * 8685.5      = 521130   (keep 60 epochs)
+#   ramp_steps         = max_steps / 28   ~= 18612   (same ~2.14-epoch warmup as _4)
+#   cosine_decay_start = 5/7 * max_steps  ~= 372236  (same decay shape as _4)
+lr: 0.0003
+weight_decay: 0.0
+max_steps: 521130
+ramp_steps: 18612
+cosine_decay_start: 372236
+
+# ---- runtime ----
+batch_size: 1
+precision: 32
+num_workers: 4

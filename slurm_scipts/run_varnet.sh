@@ -20,7 +20,7 @@ conda activate /gpfs/scratch/shaana01/anaconda3/envs/cenv3
 
 export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
 
-python e2evarnet/runner.py --config configs/e2evarnet_knee_random_vds_5.yaml
+python e2evarnet/runner.py --config configs/e2evarnet_knee_random_vds_6.yaml
 
 
 #   So launch like this:

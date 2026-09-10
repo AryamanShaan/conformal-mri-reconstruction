@@ -537,7 +537,12 @@ def build_args(cluster_launch: bool = True):
         mask_type="random_vds",
         batch_size=1,
         test_path=None,
-        combine_train_val=True,
+        # NOTE(combine-default): was hardcoded True, which made the EFFECTIVE default
+        # True whenever the config omitted the key. Now False so the default is to
+        # train on train-only; set combine_train_val: true in the config to opt into
+        # leaderboard mode (train on train+val). Config-present values still win (re-
+        # applied at the set_defaults(**_cfg) below).
+        combine_train_val=False,
         varnet_type=args.varnet_type,
     )
 
