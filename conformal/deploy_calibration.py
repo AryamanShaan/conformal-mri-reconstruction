@@ -6,6 +6,7 @@ from conformal.calibrate_lambda import psnr_lower_bound_2d, psnr_2d
 
 '''
 to be run on cpu
+This is for idea 1
 '''
 
 

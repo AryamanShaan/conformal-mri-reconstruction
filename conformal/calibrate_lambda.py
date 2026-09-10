@@ -4,6 +4,7 @@ import time
 
 '''
 to be run on cpu
+This is idea 1
 '''
 
 def hoeffding_ucb(risk, n, gamma, B=1.0): # NOTE check implementation of hoeffding_ucb
