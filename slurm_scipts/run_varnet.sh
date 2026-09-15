@@ -1,13 +1,14 @@
 #!/bin/bash
 #SBATCH --job-name=varnet_knee
-#SBATCH --partition=a100_long,radiology
+#SBATCH --partition=radiology,a100_long
 #SBATCH --gres=gpu:4
 #SBATCH --time=4-00:00:00
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=4
 #SBATCH --output=logs/%x_%j.out
-# a100-4042 is a known CUDA-13 (580.x) node -- cenv3 torch(cu12) fails there with "device busy/unavailable".
-#SBATCH --exclude=a100-4042
+# a100-4042 and a100-4048 are known CUDA-13 (580.x) nodes -- cenv3 torch(cu12) fails
+# there with "CUDA-capable device(s) is/are busy or unavailable" at torch.cuda.set_device.
+#SBATCH --exclude=a100-4042,a100-4048
 
 set -euo pipefail
 
