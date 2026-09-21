@@ -165,12 +165,12 @@ def main() -> None:
     data_dir = Path("/gpfs/scratch/shaana01/knee_fastmri_cp/multicoil_test")
     # Leaderboard-trained VarNet: a Lightning .ckpt under <root>/checkpoints/
     varnet_checkpoint = Path(
-        "/gpfs/scratch/shaana01/conformal-mri-reconstruction-logs/varnet_runs/run_2/e2e_varnet/checkpoints/e2e_knee_rvds/last.ckpt"
+        "/gpfs/scratch/shaana01/conformal-mri-reconstruction-logs/varnet_runs/run_6/e2e_varnet/checkpoints/e2e_knee_rvds/epoch=58-step=512474.ckpt"
     )
     output_pt = Path(
-        "/gpfs/scratch/shaana01/conformal-mri-reconstruction-logs/varnet_runs/run_2/e2e_varnet/ssim_scores_data/ssim_scores.pt"
+        "/gpfs/scratch/shaana01/conformal-mri-reconstruction-logs/varnet_runs/run_6/e2e_varnet/ssim_scores_data/ssim_scores.pt"
     )
-    sampling_fractions = [0.05, 0.20, 0.25, 0.50, 0.75, 0.99]  # 0.99 = fully sampled (for sanity check)
+    sampling_fractions = [0.05, 0.10, 0.20, 0.25, 0.50]  
     seed = 100
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -187,7 +187,7 @@ def main() -> None:
     #     Needs in-loop accumulation, so we init the dict here (None if disabled).
     save_slice_ssim_spread = True
     slice_ssim_spread_pt = Path(
-        "/gpfs/scratch/shaana01/conformal-mri-reconstruction-logs/varnet_runs/run_2/e2e_varnet/ssim_spread_boxplot_data/slice_ssim_spread.pt"
+        "/gpfs/scratch/shaana01/conformal-mri-reconstruction-logs/varnet_runs/run_6/e2e_varnet/ssim_spread_boxplot_data/slice_ssim_spread.pt"
     )
     slice_ssim_by_rate = (
         {sf: [] for sf in sampling_fractions} if save_slice_ssim_spread else None
@@ -199,7 +199,7 @@ def main() -> None:
     #     is nothing extra to accumulate inside the loop.
     save_volume_ssim_spread = True
     volume_ssim_spread_pt = Path(
-        "/gpfs/scratch/shaana01/conformal-mri-reconstruction-logs/varnet_runs/run_2/e2e_varnet/ssim_spread_boxplot_data/volume_ssim_spread.pt"
+        "/gpfs/scratch/shaana01/conformal-mri-reconstruction-logs/varnet_runs/run_6/e2e_varnet/ssim_spread_boxplot_data/volume_ssim_spread.pt"
     )
 
     h5_paths = sorted(data_dir.glob("*.h5"))

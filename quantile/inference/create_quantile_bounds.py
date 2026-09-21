@@ -75,6 +75,8 @@ from __future__ import annotations
 #     _sys.modules["fastMRI"] = _fastmri_pkg
 # -------------------------------------------------------------------------
 
+import xml.etree.ElementTree as etree
+from argparse import ArgumentParser
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -83,6 +85,9 @@ import torch
 
 # from fastMRI.fastmri.data import transforms
 from common import functions as transforms
+# et_query: namespace-aware ISMRMRD header lookup, used to compute the
+# acquisition padding (padding_left/right) for the padding-visualization export.
+from common.mri_header import et_query
 # from fastMRI.fastmri.models import VarNet
 from e2evarnet.VarNet import E2EVarNet as VarNet
 
@@ -190,47 +195,73 @@ def load_slice(h5_path: Path, slice_index: int) -> Tuple[torch.Tensor, torch.Ten
     return transforms.to_tensor(kspace), transforms.to_tensor(target)
 
 
+def read_padding(h5_path: Path) -> Tuple[int, int]:
+    """Acquisition padding (padding_left, padding_right) from the ISMRMRD header.
+    Per-volume (one header per file), so columns < padding_left and >= padding_right
+    are the un-acquired / zero-filled band. Same formula as the backbone data
+    pipeline. NOT used to clip the mask here (we mask no-clip, matching training) --
+    it is stored only so the padding band can be visualized against the mask later.
+    """
+    with h5py.File(h5_path, "r") as hf:
+        et_root = etree.fromstring(hf["ismrmrd_header"][()])
+    enc_y = int(et_query(et_root, ["encoding", "encodedSpace", "matrixSize", "y"]))
+    lims = ["encoding", "encodingLimits", "kspace_encoding_step_1"]
+    center = int(et_query(et_root, lims + ["center"]))
+    maximum = int(et_query(et_root, lims + ["maximum"])) + 1
+    padding_left = enc_y // 2 - center
+    padding_right = padding_left + maximum
+    return padding_left, padding_right
+
+
 def main() -> None:
-    # --- inputs (EDIT THESE) ---
-    # Calibration set: one or more directories of multicoil .h5 files. All .h5
-    # files across every listed directory are processed.
-    calib_dirs = [
-        Path("/gpfs/scratch/shaana01/knee_fastmri_cp/multicoil_test"),
-        # Path("/gpfs/scratch/shaana01/knee_fastmri_cp/multicoil_calibration"),
-        # Path("/gpfs/scratch/shaana01/knee_fastmri_cp/multicoil_val"),
-    ]
+    # --- per-run inputs (overridable from the SLURM script / CLI) ---
+    # input_data_dir: ONE directory of multicoil .h5 files (a single split -- run
+    #                 this once for calibration, once for test).
+    # output_pt:      where to save the results dict for that split.
+    # Everything else below (checkpoints, sampling_rates) is fixed across splits,
+    # so it stays hardcoded here.
+    parser = ArgumentParser()
+    parser.add_argument(
+        "--input_data_dir",
+        type=Path,
+        required=True,
+        help="Directory of multicoil .h5 files for one split (calib or test).",
+    )
+    parser.add_argument(
+        "--output_pt",
+        type=Path,
+        required=True,
+        help="Output .pt path for this split's quantile-bounds dict.",
+    )
+    args = parser.parse_args()
+    input_data_dir = args.input_data_dir
+    output_pt = args.output_pt
 
     # Frozen VarNet backbone (leaderboard Lightning .ckpt).
     varnet_checkpoint = Path(
-        "/gpfs/scratch/shaana01/varnet_knee_root_dir/run_1/checkpoints/epochepoch=33-val_lossvalidation_loss=0.1117.ckpt"
+        "/gpfs/scratch/shaana01/conformal-mri-reconstruction-logs/varnet_runs/run_6/e2e_varnet/checkpoints/e2e_knee_rvds/epoch=58-step=512474.ckpt"
     )
     # Quantile U-Nets, batch_14 (QuantileBoundOriginalUnet, output_version v1).
     # quantile=0.95 config -> upper bound; quantile=0.05 config -> lower bound.
     # Swap last.ckpt for the best 'epoch..-val_loss..ckpt' if you prefer.
     upper_checkpoint = Path(
-        "/gpfs/scratch/shaana01/quantile_regression_root/quantile_0.95_batches_14/checkpoints/last.ckpt"
+        "/gpfs/scratch/shaana01/conformal-mri-reconstruction-logs/quantile_model_runs/quantile_0.95_cmr_batch_14/checkpoints/last.ckpt"
     )
     lower_checkpoint = Path(
-        "/gpfs/scratch/shaana01/quantile_regression_root/quantile_0.05_batches_14/checkpoints/last.ckpt"
-    )
-
-    output_pt = Path(
-        "/gpfs/scratch/shaana01/quantile_regression_root/quantile_bounds_test_combined_batch_14.pt"
-        # "/gpfs/scratch/shaana01/quantile_regression_root/quantile_bounds_calib_val_combined_batch_14.pt"
+        "/gpfs/scratch/shaana01/conformal-mri-reconstruction-logs/quantile_model_runs/quantile_0.05_cmr_batch_14/checkpoints/last.ckpt"
     )
 
     # Nested sweep: rates ascend so each mask can be built on top of the previous.
-    sampling_rates: List[float] = [0.05, 0.10, 0.125, 0.15, 0.20, 0.25]
+    sampling_rates: List[float] = [0.05, 0.10, 0.20, 0.25, 0.35, 0.50]  
     base_seed = 100
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    h5_paths = sorted(p for d in calib_dirs for p in d.glob("*.h5"))
+    h5_paths = sorted(input_data_dir.glob("*.h5"))
     if not h5_paths:
-        raise ValueError(f"No HDF5 files found in {calib_dirs}.")
+        raise ValueError(f"No HDF5 files found in {input_data_dir}.")
 
-    print(f"Found {len(h5_paths)} volumes across {len(calib_dirs)} directories:", flush=True)
-    for d in calib_dirs:
-        print(f"  {len(sorted(d.glob('*.h5')))} in {d}", flush=True)
+    print(f"Found {len(h5_paths)} volumes in {input_data_dir}", flush=True)
+    print(f"Output will be saved to: {output_pt}", flush=True)
     print(f"Sampling rates (nested): {sampling_rates}", flush=True)
 
     varnet = load_varnet(varnet_checkpoint, device)
@@ -248,12 +279,22 @@ def main() -> None:
         with h5py.File(h5_path, "r") as hf:
             num_slices = hf["kspace"].shape[0]
 
+        # Per-volume acquisition padding (constant across slices/coils/rates).
+        pl, pr = read_padding(h5_path)
+
         vol_dict: Dict = {"volume_name": h5_path.name}
 
         for slice_index in range(num_slices):
             kspace, target = load_slice(h5_path, slice_index)
             kspace = kspace.unsqueeze(0).to(device)   # [1, coils, H, W, 2]
             target = target.to(device)                # [H, W]
+
+            # Padding sanity values (per-slice, rate-independent): max |k| in the
+            # left/right padding bands -- expected 0.0 (un-acquired, zero-filled).
+            # W is the phase-encode axis (-2) of [1, coils, H, W, 2].
+            width = kspace.shape[-2]
+            pad_max_left = float(kspace[..., :pl, :].abs().max()) if pl > 0 else 0.0
+            pad_max_right = float(kspace[..., pr:, :].abs().max()) if pr < width else 0.0
 
             # apply_mask-style shape: collapse batch+coil dims -> one column mask
             # broadcast over all coils/slices. Matches quantile module forward.
@@ -302,6 +343,13 @@ def main() -> None:
                     "varnet_recon": varnet_recon_c.detach().cpu().float(),
                     "upper_quantile": upper_pred.detach().cpu().float(),
                     "lower_quantile": lower_pred.detach().cpu().float(),
+                    # padding metadata for visualization (per-volume pl/pr/width;
+                    # per-slice pad maxes -- both rate-independent, repeated per rate).
+                    "padding_left": pl,
+                    "padding_right": pr,
+                    "width": width,                # == len(mask)
+                    "pad_max_left": pad_max_left,  # expect 0.0
+                    "pad_max_right": pad_max_right, # expect 0.0
                 }
 
                 # Chain: next (higher) rate is built on top of this mask.
