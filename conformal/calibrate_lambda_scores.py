@@ -78,6 +78,8 @@ def main():
     save_psnr_by_rate_path = "/gpfs/scratch/shaana01/quantile_regression_root/psnr_by_rate_batch_14_2.pt"
     save_rejections_by_lambda_path = "/gpfs/scratch/shaana01/quantile_regression_root/rejections_by_lambda_batch_14_2.pt"
     save_psnr_by_lambda_path = "/gpfs/scratch/shaana01/quantile_regression_root/psnr_by_lambda_batch_14_2.pt"
+    save_coverage_by_min_psnr_path = "/gpfs/scratch/shaana01/quantile_regression_root/coverage_by_min_psnr_batch_14_2.pt"
+    save_chosen_lambdas_path = "/gpfs/scratch/shaana01/quantile_regression_root/chosen_lambdas_by_min_psnr_batch_14_2.pt"
     save_score_psnr_pairs_path = "/gpfs/scratch/shaana01/quantile_regression_root/score_psnr_pairs_batch_14.pt"
 
 
@@ -200,12 +202,15 @@ def main():
     print('---------------------------------------------------------------', flush=True)
     print()
 
-    # Sweep lambda (a width budget, same units as grid) from high to low. For each
-    # lambda, each volume picks the row score that is the MAXIMUM one still <= lambda
-    # -- i.e. the smallest quantile width that fits the budget -- and we score that
-    # (volume, sampling_rate) pick with a volume-level PSNR (varnet recon vs RSS).
-    # A volume with no score <= lambda (even its tightest width exceeds the budget)
-    # has no valid pick and is skipped for that lambda.
+    # Sweep lambda (a score budget, same units as the grid scores). For each lambda,
+    # each SLICE (grid row) picks the column whose score is the MAXIMUM one still
+    # <= lambda (the highest usable sampling rate under the budget); its PSNR is read
+    # straight from the grid tuple. A slice with no score <= lambda has no valid pick
+    # and is counted as rejected/skipped for that lambda.
+    #
+    # For each min-PSNR threshold in set_min_psnr we track, per lambda, the fraction
+    # of ALL slices whose chosen pick meets that PSNR (coverage), and record the
+    # smallest lambda whose coverage reaches delta.
 
 
 
@@ -222,56 +227,82 @@ def main():
 
 
 
-    rejections_by_lambda = {}   # lambda -> int count of rejected (skipped) volumes
-    psnr_by_lambda = {}         # lambda -> list of psnr values (one per kept volume)
+    delta = 0.90
+    total_num_slices = len(grid)
+
+    rejections_by_lambda = {}   # lambda -> int count of rejected (skipped) slices
+    psnr_by_lambda = {}         # lambda -> list of chosen-slice PSNRs (kept slices)
+    coverage_by_min_psnr = {mp: {} for mp in set_min_psnr}      # mp -> {lambda: coverage in [0,1]}
+    chosen_lambda_for_min_psnr = {mp: None for mp in set_min_psnr}  # mp -> smallest lambda hitting target
 
     for lam in lambdas:
-        psnr_list = []
+        lam_key = round(float(lam), 3)
+        psnr_list = []          # chosen-slice PSNR for kept slices at this lambda
         skipped = 0
-        for row, vol_id in zip(grid, vol_ids):
-            
+        for row in grid:
+            # pick the column (rate) with the MAX score still <= lambda.
             best_idx = -1
-            for idx, score in enumerate(row):
-                if score <= lam and (best_idx == -1 or row[best_idx] < score):
+            for idx, (score, _p) in enumerate(row):
+                if score <= lam and (best_idx == -1 or row[best_idx][0] < score):
                     best_idx = idx
             if best_idx == -1:
                 skipped += 1
                 continue
+            psnr_list.append(row[best_idx][1])   # PSNR straight from the grid tuple
 
-            rate = sampling_rates[best_idx]
-            slc_ids = sorted(s for s in data_calib[vol_id].keys() if isinstance(s, int))
-            recon = torch.stack([data_calib[vol_id][s][rate]['varnet_recon'] for s in slc_ids])
-            gt = torch.stack([data_calib[vol_id][s][rate]['target_rss'] for s in slc_ids])
-            psnr_list.append(psnr_3d(recon, gt, max_pixel_value).item())
-
-        # bookkeeping (reuses values already computed above -- no extra work).
-        lam_key = round(float(lam), 3)
         rejections_by_lambda[lam_key] = skipped
         psnr_by_lambda[lam_key] = psnr_list
 
+        # coverage per min-PSNR threshold (denominator = ALL slices).
+        cov_str = []
+        for mp in set_min_psnr:
+            num_ok = sum(1 for p in psnr_list if p >= mp)
+            pct = num_ok / total_num_slices
+            coverage_by_min_psnr[mp][lam_key] = pct
+            # smallest lambda whose coverage reaches the target.
+            if pct >= delta and (
+                chosen_lambda_for_min_psnr[mp] is None
+                or lam < chosen_lambda_for_min_psnr[mp]
+            ):
+                chosen_lambda_for_min_psnr[mp] = float(lam)
+            cov_str.append(f"psnr>={mp:.0f}: {100 * pct:.1f}%")
+
         if psnr_list:
             print(f"lambda={lam:.3f}: n={len(psnr_list)} skipped={skipped} "
-                  f"max={max(psnr_list):.4f} min={min(psnr_list):.4f} "
-                  f"avg={sum(psnr_list) / len(psnr_list):.4f}", flush=True)
-            print()
+                  f"psnr[max={max(psnr_list):.2f} min={min(psnr_list):.2f} "
+                  f"avg={sum(psnr_list) / len(psnr_list):.2f}] | " + "  ".join(cov_str), flush=True)
         else:
-            print(f"lambda={lam:.3f}: n=0 skipped={skipped} (no volume had a score <= lambda)",
-                  flush=True)
-            print()
+            print(f"lambda={lam:.3f}: n=0 skipped={skipped} (no slice had a score <= lambda) | "
+                  + "  ".join(cov_str), flush=True)
+
+    print()
+    print(f"Smallest lambda reaching {100 * delta:.0f}% coverage per min-PSNR:", flush=True)
+    for mp in set_min_psnr:
+        print(f"  min_psnr={mp:.1f} -> lambda={chosen_lambda_for_min_psnr[mp]}", flush=True)
+    print()
 
     # ---- save lambda-sweep bookkeeping ----
-    # rejections_by_lambda.pt: a python dict, lambda(float) -> int, the number of
-    # volumes rejected (no score <= lambda) at that lambda. Keys are in descending
-    # lambda order. For plotting rejection count vs decreasing lambda.
+    # rejections_by_lambda.pt: dict lambda(float) -> int, # slices rejected (no
+    # score <= lambda) at that lambda. For rejection-count vs lambda plots.
     torch.save(rejections_by_lambda, save_rejections_by_lambda_path)
-    print(f"Saved rejections_by_lambda -> {t}", flush=True)
+    print(f"Saved rejections_by_lambda -> {save_rejections_by_lambda_path}", flush=True)
 
-    # psnr_by_lambda.pt: a python dict, lambda(float) -> list[float] of the
-    # volume-level 3d PSNR for each KEPT volume at that lambda (list length varies
-    # with lambda as volumes get rejected). For a box-and-whisker of PSNR spread
-    # vs decreasing lambda.
+    # psnr_by_lambda.pt: dict lambda(float) -> list[float] of chosen-slice PSNRs
+    # (one per KEPT slice; length shrinks as slices get rejected). For a PSNR
+    # box-and-whisker vs lambda.
     torch.save(psnr_by_lambda, save_psnr_by_lambda_path)
     print(f"Saved psnr_by_lambda -> {save_psnr_by_lambda_path}", flush=True)
+
+    # coverage_by_min_psnr.pt: dict min_psnr(float) -> {lambda(float): coverage in
+    # [0,1]} = fraction of ALL slices whose chosen pick meets that PSNR at that
+    # lambda. For coverage-vs-lambda curves.
+    torch.save(coverage_by_min_psnr, save_coverage_by_min_psnr_path)
+    print(f"Saved coverage_by_min_psnr -> {save_coverage_by_min_psnr_path}", flush=True)
+
+    # chosen_lambdas_by_min_psnr.pt: dict min_psnr(float) -> smallest lambda whose
+    # coverage reached delta (None if never reached).
+    torch.save(chosen_lambda_for_min_psnr, save_chosen_lambdas_path)
+    print(f"Saved chosen_lambda_for_min_psnr -> {save_chosen_lambdas_path}", flush=True)
    
 
 
