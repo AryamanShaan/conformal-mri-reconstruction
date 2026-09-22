@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import time
+import gc
 
 '''
 to be run on cpu
@@ -57,11 +58,6 @@ def psnr_3d(recon, gt, max_pixel_value):
 
 def main():
 
-    # delta = 0.10
-    # gamma = 0.15
-    # start_lambda = 2.0
-    # end_lambda = 0.5
-    # lambda_step = 30
 
     
     sampling_rates = [0.05, 0.10, 0.20, 0.25, 0.35, 0.50]
@@ -87,13 +83,9 @@ def main():
     _t_load = time.time()
     data_calib = torch.load(data_path_calibration, map_location=torch.device('cpu'))
     print(f"Loaded calibration data in {time.time() - _t_load:.1f}s", flush=True)
+    # NOTE: test data is loaded later (TEST SPLIT section), AFTER data_calib is
+    # freed, so calibration and test data are never both in RAM at once.
 
-    print(f"Loading test data from {data_path_test} ...", flush=True)
-    _t_load = time.time()
-    data_test = torch.load(data_path_test, map_location=torch.device('cpu'))
-    print(f"Loaded test data in {time.time() - _t_load:.1f}s", flush=True)
-
-    
     num_vols = 0
     # count num_vols
     for vol_id in data_calib.keys():
@@ -219,6 +211,8 @@ def main():
 
     # ************************************************************************
     set_min_psnr = [30.0, 40.0, 50.0]
+    delta = 0.90
+    # gamma = 0.15
     starting_lambda = 15
     ending_lambda = 3
     num_steps = 15
@@ -226,18 +220,18 @@ def main():
     # ************************************************************************
 
 
+    total_num_slices = len(grid)   # one candidate sample (a chosen slice,rate pick) per slice
 
-    delta = 0.90
-    total_num_slices = len(grid)
-
-    rejections_by_lambda = {}   # lambda -> int count of rejected (skipped) slices
-    psnr_by_lambda = {}         # lambda -> list of chosen-slice PSNRs (kept slices)
-    coverage_by_min_psnr = {mp: {} for mp in set_min_psnr}      # mp -> {lambda: coverage in [0,1]}
-    chosen_lambda_for_min_psnr = {mp: None for mp in set_min_psnr}  # mp -> smallest lambda hitting target
+    # A "sample" at a given lambda = one CHOSEN (slice, sampling_rate) pick. Each slice
+    # yields one sample if some rate has score <= lambda, else it is rejected.
+    rejections_by_lambda = {}   # lambda -> # samples rejected (slices with no valid pick)
+    psnr_by_lambda = {}         # lambda -> list of chosen-sample PSNRs (len <= total_num_slices)
+    coverage_by_min_psnr = {mp: {} for mp in set_min_psnr}          # mp -> {lambda: coverage in [0,1]}
+    chosen_lambda_for_min_psnr = {mp: None for mp in set_min_psnr}  # mp -> smallest lambda hitting delta
 
     for lam in lambdas:
         lam_key = round(float(lam), 3)
-        psnr_list = []          # chosen-slice PSNR for kept slices at this lambda
+        psnr_list = []          # chosen-sample PSNR for kept samples at this lambda
         skipped = 0
         for row in grid:
             # pick the column (rate) with the MAX score still <= lambda.
@@ -248,32 +242,30 @@ def main():
             if best_idx == -1:
                 skipped += 1
                 continue
-            psnr_list.append(row[best_idx][1])   # PSNR straight from the grid tuple
+            psnr_list.append(row[best_idx][1])   
 
         rejections_by_lambda[lam_key] = skipped
         psnr_by_lambda[lam_key] = psnr_list
 
-        # coverage per min-PSNR threshold (denominator = ALL slices).
-        cov_str = []
+        # coverage per min-PSNR threshold (denominator = total_num_slices, so
+        # rejected samples count as NOT meeting the threshold).
         for mp in set_min_psnr:
             num_ok = sum(1 for p in psnr_list if p >= mp)
             pct = num_ok / total_num_slices
             coverage_by_min_psnr[mp][lam_key] = pct
-            # smallest lambda whose coverage reaches the target.
+            # smallest lambda whose coverage reaches delta.
             if pct >= delta and (
                 chosen_lambda_for_min_psnr[mp] is None
                 or lam < chosen_lambda_for_min_psnr[mp]
             ):
                 chosen_lambda_for_min_psnr[mp] = float(lam)
-            cov_str.append(f"psnr>={mp:.0f}: {100 * pct:.1f}%")
 
         if psnr_list:
             print(f"lambda={lam:.3f}: n={len(psnr_list)} skipped={skipped} "
                   f"psnr[max={max(psnr_list):.2f} min={min(psnr_list):.2f} "
-                  f"avg={sum(psnr_list) / len(psnr_list):.2f}] | " + "  ".join(cov_str), flush=True)
+                  f"avg={sum(psnr_list) / len(psnr_list):.2f}]", flush=True)
         else:
-            print(f"lambda={lam:.3f}: n=0 skipped={skipped} (no slice had a score <= lambda) | "
-                  + "  ".join(cov_str), flush=True)
+            print(f"lambda={lam:.3f}: n=0 skipped={skipped} (no sample had a score <= lambda)", flush=True)
 
     print()
     print(f"Smallest lambda reaching {100 * delta:.0f}% coverage per min-PSNR:", flush=True)
@@ -282,20 +274,20 @@ def main():
     print()
 
     # ---- save lambda-sweep bookkeeping ----
-    # rejections_by_lambda.pt: dict lambda(float) -> int, # slices rejected (no
-    # score <= lambda) at that lambda. For rejection-count vs lambda plots.
+    # rejections_by_lambda.pt: dict lambda(float) -> int, # samples rejected (slices
+    # with no rate whose score <= lambda) at that lambda. For rejection-count vs lambda plots.
     torch.save(rejections_by_lambda, save_rejections_by_lambda_path)
     print(f"Saved rejections_by_lambda -> {save_rejections_by_lambda_path}", flush=True)
 
-    # psnr_by_lambda.pt: dict lambda(float) -> list[float] of chosen-slice PSNRs
-    # (one per KEPT slice; length shrinks as slices get rejected). For a PSNR
-    # box-and-whisker vs lambda.
+    # psnr_by_lambda.pt: dict lambda(float) -> list[float] of chosen-sample PSNRs
+    # (one per KEPT sample; len <= total_num_slices, shrinks as samples get rejected).
+    # For a PSNR box-and-whisker vs lambda.
     torch.save(psnr_by_lambda, save_psnr_by_lambda_path)
     print(f"Saved psnr_by_lambda -> {save_psnr_by_lambda_path}", flush=True)
 
     # coverage_by_min_psnr.pt: dict min_psnr(float) -> {lambda(float): coverage in
-    # [0,1]} = fraction of ALL slices whose chosen pick meets that PSNR at that
-    # lambda. For coverage-vs-lambda curves.
+    # [0,1]} = fraction of ALL slices whose chosen sample meets that PSNR at that
+    # lambda (rejected samples count as not meeting). For coverage-vs-lambda curves.
     torch.save(coverage_by_min_psnr, save_coverage_by_min_psnr_path)
     print(f"Saved coverage_by_min_psnr -> {save_coverage_by_min_psnr_path}", flush=True)
 
@@ -303,10 +295,29 @@ def main():
     # coverage reached delta (None if never reached).
     torch.save(chosen_lambda_for_min_psnr, save_chosen_lambdas_path)
     print(f"Saved chosen_lambda_for_min_psnr -> {save_chosen_lambdas_path}", flush=True)
-   
 
+    print()
+    print('---------------------------------------------------------------', flush=True)
+    print()
 
-    
+    # ============================================================
+    # TEST SPLIT
+    # ============================================================
+    # Free the calibration data first -- everything above kept only floats (grid,
+    # score/psnr dicts, chosen lambdas), so nothing below needs data_calib. This
+    # reclaims its RAM before the (large) test data is loaded, so the two splits
+    # are never both resident at once.
+    del data_calib
+    gc.collect()
+
+    print(f"Loading test data from {data_path_test} ...", flush=True)
+    _t_load = time.time()
+    data_test = torch.load(data_path_test, map_location=torch.device('cpu'))
+    print(f"Loaded test data in {time.time() - _t_load:.1f}s", flush=True)
+
+    # TODO(test): apply the chosen lambda(s) to data_test and report realized
+    # coverage / PSNR on the held-out test split.
+
 
 
 if __name__ == "__main__":
